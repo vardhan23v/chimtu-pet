@@ -19,65 +19,73 @@ def draw(pose):
     img = Image.new("RGBA", (W*s, H*s), (0,0,0,0)); d = ImageDraw.Draw(img)
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
-    tongue = pose.get("tongue", True); wag = pose.get("wag", 0)
+    tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
     base = (H-6)*s
-    # body geometry (facing right)
-    bx, by = W*0.46*s, base - 30*s - bob
-    if lie: by = base - 20*s
-    if sit: by = base - 26*s - bob
-    brx, bry = 30*s, 18*s
+    cx = W/2*s
+    # body: rounded, seen from the front, behind the head
+    brx, bry = 24*s, 22*s
+    by = base - bry - bob
+    if lie: bry = 15*s; by = base - bry
+    if sit: bry = 24*s; by = base - bry - bob
 
-    # tail: curled over the rump
-    tx, ty = bx - 26*s, by - 14*s + wag*s
-    E(d, tx, ty, 9*s, 9*s, ORANGE); E(d, tx-1*s, ty-1*s, 4.5*s, 4.5*s, CREAM)
+    # tail curl peeking above the back
+    tx, ty = cx - 20*s, by - bry + 4*s + wag*s
+    E(d, tx, ty, 8*s, 8*s, ORANGE); E(d, tx, ty, 3.8*s, 3.8*s, CREAM)
 
-    # legs (orange with cream paws)
-    def leg(x, top, h, swing=0):
-        d.rounded_rectangle([x-5*s+swing, top, x+5*s+swing, top+h], radius=4*s, fill=ORANGE)
-        E(d, x+swing, top+h, 6*s, 4*s, CREAM)
+    # back legs (slightly wider apart, behind)
+    if not lie:
+        for lx in (-19*s, 19*s):
+            E(d, cx+lx, base-4*s, 8*s, 4.5*s, DARK_OR)
+
+    E(d, cx, by, brx, bry, ORANGE)
+    E(d, cx, by+6*s, brx*0.7, bry*0.75, CREAM)            # chest / belly
+
+    # front legs with cream paws
+    def leg(x, lift=0):
+        top = by + 4*s
+        d.rounded_rectangle([x-5.5*s, top, x+5.5*s, base-lift], radius=4*s, fill=ORANGE)
+        E(d, x, base-lift-2*s, 7*s, 4.5*s, CREAM)
     if lie:
-        E(d, bx-18*s, base-4*s, 9*s, 4.5*s, CREAM); E(d, bx+16*s, base-4*s, 9*s, 4.5*s, CREAM)
-    elif sit:
-        E(d, bx-14*s, base-5*s, 10*s, 5*s, CREAM)
-        leg(bx+14*s, by+4*s, base-8*s-(by+4*s)); leg(bx+22*s, by+4*s, base-8*s-(by+4*s))
+        E(d, cx-14*s, base-3*s, 10*s, 5*s, CREAM); E(d, cx+14*s, base-3*s, 10*s, 5*s, CREAM)
     else:
-        sw = 0 if legs is None else math.sin(legs)*4*s
-        leg(bx-18*s, by+6*s, base-8*s-(by+6*s), sw); leg(bx-10*s, by+6*s, base-8*s-(by+6*s), -sw)
-        leg(bx+12*s, by+6*s, base-8*s-(by+6*s), -sw)
-        if not wave:
-            leg(bx+22*s, by+6*s, base-8*s-(by+6*s), sw)
+        sw = 0 if legs is None else max(0, math.sin(legs))*4*s
+        sw2 = 0 if legs is None else max(0, -math.sin(legs))*4*s
+        leg(cx-12*s, sw)
+        if wave:
+            px, py = cx+22*s, by-8*s-wave*12*s
+            d.rounded_rectangle([px-5.5*s, py, px+5.5*s, by+8*s], radius=4*s, fill=ORANGE); E(d, px, py, 7*s, 6*s, CREAM)
+        else:
+            leg(cx+12*s, sw2)
 
-    # body: orange back, cream belly
-    E(d, bx, by, brx, bry, ORANGE)
-    E(d, bx-2*s, by-4*s, brx*0.85, bry*0.5, DARK_OR)      # darker saddle on the back
-    E(d, bx, by+7*s, brx*0.9, bry*0.5, CREAM)              # belly
-
-    # head (front-right)
-    hx, hy = bx + 26*s, by - 16*s
-    hr = 17*s
-    # ears: two small triangles
-    for ex_off, tip in ((-10, -20), (2, -21)):
-        x = hx + ex_off*s
-        d.polygon([(x-6*s, hy-9*s), (x+7*s, hy-10*s), (x+2*s, hy+tip*s)], fill=ORANGE)
-        d.polygon([(x-3*s, hy-10*s), (x+5*s, hy-11*s), (x+2*s, hy+(tip+5)*s)], fill=PINK)
-    E(d, hx, hy, hr+1*s, hr, ORANGE)
-    E(d, hx-2*s, hy-6*s, hr*0.8, hr*0.5, DARK_OR)          # forehead shading
-    E(d, hx+7*s, hy+7*s, 10*s, 8*s, CREAM)                 # muzzle / cheek
-    E(d, hx-2*s, hy+9*s, 9*s, 6*s, CREAM)                  # lower cheek / throat
-    E(d, hx+9*s, hy-6*s, 2.4*s, 1.6*s, CREAM)              # eyebrow spot
-    # eye (side view: one visible)
-    eyx, eyy = hx+7*s, hy
-    if blink: d.line([(eyx-3*s, eyy), (eyx+3*s, eyy)], fill=BLACK, width=int(2*s))
-    else:
-        E(d, eyx, eyy, 3*s, 3.3*s, BLACK); E(d, eyx+1*s, eyy-1*s, 1*s, 1*s, WHITE)
-    # nose + mouth + tongue
-    nx, ny = hx+15*s, hy+5*s
-    E(d, nx, ny, 3*s, 2.4*s, NOSE)
-    d.arc([nx-8*s, ny+1*s, nx+1*s, ny+8*s], 0, 140, fill=NOSE, width=int(1.3*s))
-    if tongue: E(d, nx-4*s, ny+8*s, 3*s, 3.5*s, PINK)
-    if wave:
-        px, py = bx+30*s, by+2*s-wave*14*s
-        d.rounded_rectangle([px-5*s, py, px+5*s, by+10*s], radius=4*s, fill=ORANGE); E(d, px, py, 6*s, 5*s, CREAM)
+    # head: front view, round and wide
+    hx = cx + face*4*s
+    hy = by - bry + 2*s
+    hrx, hry = 25*s, 21*s
+    # ears
+    for e in (-1, 1):
+        ex = hx + e*17*s
+        d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+e*2*s, hy-30*s)], fill=ORANGE)
+        d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+e*1*s, hy-25*s)], fill=PINK)
+    E(d, hx, hy, hrx, hry, ORANGE)
+    E(d, hx, hy-9*s, hrx*0.75, hry*0.45, DARK_OR)          # forehead shading
+    # cream cheeks + muzzle mask
+    for e in (-1, 1): E(d, hx+e*14*s, hy+9*s, 12*s, 10*s, CREAM)
+    E(d, hx+face*2*s, hy+8*s, 12*s, 10*s, CREAM)
+    d.polygon([(hx-4*s, hy+2*s), (hx+4*s, hy+2*s), (hx+face*1*s, hy-9*s)], fill=CREAM)   # blaze
+    for e in (-1, 1): E(d, hx+e*10*s+face*1.5*s, hy-10*s, 2.6*s, 1.7*s, CREAM)           # eyebrow spots
+    # eyes
+    for e in (-1, 1):
+        ex, ey = hx+e*10*s+face*2*s, hy-2*s
+        if blink: d.line([(ex-3.5*s, ey), (ex+3.5*s, ey)], fill=BLACK, width=int(2*s))
+        else:
+            E(d, ex, ey, 3.4*s, 3.8*s, BLACK); E(d, ex+1.2*s, ey-1.2*s, 1.1*s, 1.1*s, WHITE)
+    # nose, mouth, tongue
+    nx, ny = hx+face*3*s, hy+6*s
+    E(d, nx, ny, 4*s, 3*s, NOSE)
+    d.line([(nx, ny+2.5*s), (nx, ny+6*s)], fill=NOSE, width=int(1.3*s))
+    d.arc([nx-7*s, ny+2*s, nx-0.5*s, ny+9*s], 0, 120, fill=NOSE, width=int(1.3*s))
+    d.arc([nx+0.5*s, ny+2*s, nx+7*s, ny+9*s], 60, 180, fill=NOSE, width=int(1.3*s))
+    if tongue: E(d, nx, ny+10*s, 3.5*s, 3.5*s, PINK)
     return img.resize((W*SCALE, H*SCALE), Image.LANCZOS)
 
 def save(name, frames):
@@ -85,7 +93,7 @@ def save(name, frames):
     for i, f in enumerate(frames): f.save(f"{OUT}/{name}_{i:02d}.png")
 
 idle = [draw({"bob": b, "blink": bl, "wag": w}) for b, bl, w in [(0,False,0),(0.6,False,-1.5),(1.2,False,-3),(0.6,False,-1.5),(0,False,0),(0,True,0)]]
-walk_r = [draw({"bob": abs(math.sin(p))*2, "legs": p, "wag": math.sin(p)*2}) for p in [i*math.pi/3 for i in range(6)]]
+walk_r = [draw({"bob": abs(math.sin(p))*2, "legs": p, "wag": math.sin(p)*2, "facing": 1}) for p in [i*math.pi/3 for i in range(6)]]
 walk_l = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in walk_r]
 sit = [draw({"sit": True, "bob": b, "blink": bl, "wag": w}) for b, bl, w in [(0,False,0),(0.5,False,-2),(0,True,0),(0.5,False,-2)]]
 sleep = [draw({"lie": True, "blink": True, "tongue": False, "wag": w}) for w in (0, 1)]
