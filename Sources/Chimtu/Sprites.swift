@@ -9,7 +9,7 @@ struct Animation {
 }
 
 enum Sprites {
-    static let size = CGSize(width: 96, height: 96)
+    static let size = CGSize(width: 112, height: 96)
 
     static func load() -> [String: Animation] {
         let specs: [(String, Int, Double)] = [
