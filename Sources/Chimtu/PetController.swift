@@ -39,6 +39,37 @@ final class PetController {
 
     private var wasAsleep = false
 
+    /// Follow-cursor mode: Chimtu trots toward the mouse and idles beside it.
+    private(set) var followsCursor = false
+    func setFollowCursor(_ on: Bool) {
+        followsCursor = on
+        if on { enter("idle", for: 0) } else { chooseNextState() }
+    }
+
+    private func followTick() {
+        let mouse = NSEvent.mouseLocation
+        var f = window.frame
+        let dx = mouse.x - f.midX
+        let dy = mouse.y - f.midY
+        let speed: CGFloat = 4
+        let arrived = abs(dx) < 50 && abs(dy) < 60
+        if arrived {
+            if !current.name.hasPrefix("idle") { enter("idle", for: 0) }
+            return
+        }
+        let dir: CGFloat = dx > 0 ? 1 : -1
+        let want = dir > 0 ? "walk_right" : "walk_left"
+        if current.name != want { walkDirection = dir; enter(want, for: 0) }
+        // Move toward the cursor on both axes but keep the pet fully on screen.
+        f.origin.x += min(max(dx, -speed), speed)
+        f.origin.y += min(max(dy, -speed), speed)
+        if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
+            f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
+            f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
+        }
+        window.setFrameOrigin(f.origin)
+    }
+
     /// Public commands (menu + gestures).
     func jump() { enter("jump", for: 0.6) }
     func sitDown() { enter("sit", for: .random(in: 10...20)) }
@@ -49,7 +80,7 @@ final class PetController {
         wasAsleep = current.name == "sleep"
         current = anim
         frame = 0
-        stateEndsAt = Date().addingTimeInterval(seconds)
+        stateEndsAt = seconds > 0 ? Date().addingTimeInterval(seconds) : .distantFuture
         restartTimer()
         tick()
     }
@@ -105,6 +136,12 @@ final class PetController {
         }
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
+        if followsCursor {
+            let gesture = ["wave", "jump", "scratch", "yawn"].contains(current.name)
+            if gesture && Date() < stateEndsAt { return }
+            followTick()
+            return
+        }
         if current.name.hasPrefix("walk") {
             var f = window.frame
             f.origin.x += walkDirection * 2.5

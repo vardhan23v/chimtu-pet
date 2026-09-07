@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pet: PetController!
     private var toggleItem: NSMenuItem!
     private var loginItem: NSMenuItem!
+    private var followItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let animations = Sprites.load()
@@ -27,17 +28,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         menu.addItem(.separator())
+        followItem = NSMenuItem(title: "Follow Cursor", action: #selector(toggleFollow), keyEquivalent: "f")
+        followItem.target = self
+        menu.addItem(followItem)
+        menu.addItem(.separator())
         loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Eyes follow your cursor", action: nil, keyEquivalent: "")
+        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Follow Cursor makes him chase your mouse", action: nil, keyEquivalent: "")
         about.isEnabled = false
         menu.addItem(about)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Chimtu", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    @objc private func toggleFollow() {
+        pet.setFollowCursor(!pet.followsCursor)
+        followItem.state = pet.followsCursor ? .on : .off
     }
 
     @objc private func doJump() { pet.jump() }
