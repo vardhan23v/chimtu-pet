@@ -29,6 +29,7 @@ final class PetController {
         window = PetWindow(size: Sprites.size)
         placeAtBottom()
         view.onClick = { [weak self] in self?.enter("wave", for: 1.2) }
+        view.onDoubleClick = { [weak self] in self?.jump() }
         observeSystem()
         window.orderFrontRegardless()
         enter("idle", for: 6)
@@ -36,8 +37,16 @@ final class PetController {
 
     // MARK: state machine
 
+    private var wasAsleep = false
+
+    /// Public commands (menu + gestures).
+    func jump() { enter("jump", for: 0.6) }
+    func sitDown() { enter("sit", for: .random(in: 10...20)) }
+    func goToSleep() { enter("sleep", for: .random(in: 30...90)) }
+
     private func enter(_ name: String, for seconds: TimeInterval) {
         guard let anim = animations[name] else { return }
+        wasAsleep = current.name == "sleep"
         current = anim
         frame = 0
         stateEndsAt = Date().addingTimeInterval(seconds)
@@ -46,12 +55,16 @@ final class PetController {
     }
 
     private func chooseNextState() {
+        // Waking up always starts with a yawn and stretch.
+        if current.name == "sleep" { enter("yawn", for: 1.5); return }
         // Mostly rests. Walking is the only state that moves the window.
         let roll = Double.random(in: 0..<1)
         switch roll {
-        case ..<0.45: enter("idle", for: .random(in: 5...12))
-        case ..<0.75: enter("sit", for: .random(in: 6...15))
-        case ..<0.88: enter("sleep", for: .random(in: 15...40))
+        case ..<0.40: enter("idle", for: .random(in: 5...12))
+        case ..<0.65: enter("sit", for: .random(in: 6...15))
+        case ..<0.77: enter("sleep", for: .random(in: 15...40))
+        case ..<0.85: enter("scratch", for: 1.5)
+        case ..<0.88: enter("jump", for: 0.6)
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -77,7 +90,19 @@ final class PetController {
         timer = t
     }
 
+    /// While idling, pick the idle variant whose eyes point toward the cursor.
+    /// Uses the cached mouse location on the existing tick: no extra wakeups.
+    private func idleVariantForCursor() -> Animation? {
+        let mouse = NSEvent.mouseLocation
+        let dx = mouse.x - window.frame.midX
+        let name = dx < -60 ? "idle_left" : (dx > 60 ? "idle_right" : "idle")
+        return animations[name]
+    }
+
     private func tick() {
+        if current.name.hasPrefix("idle"), let variant = idleVariantForCursor(), variant.name != current.name {
+            current = variant   // same frame count and rate, so keep the frame index
+        }
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if current.name.hasPrefix("walk") {

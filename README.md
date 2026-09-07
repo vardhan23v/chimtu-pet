@@ -1,8 +1,9 @@
 # Chimtu — a macOS desktop pet
 
 Chimtu is the Telugu-meme Cheems Shiba, living at the bottom of your screen.
-He idles, sits, naps, wanders a little, and waves when you click him.
-Menu-bar icon 🐕 lets you hide/show or quit him.
+He idles, sits, naps, wanders a little, scratches an ear, and yawns when he
+wakes up. His eyes follow your cursor. Click him to wave, double-click to jump.
+Menu-bar icon 🐕: Hide/Show, Jump, Sit Down, Go to Sleep, Launch at Login, Quit.
 
 ## Build & run
 
@@ -18,7 +19,8 @@ open dist/Chimtu.app
 - One `Timer` at the animation's own rate (1–8 fps) with 50% tolerance so macOS can coalesce wakeups.
 - The timer is torn down when the pet is hidden, the display sleeps, the Mac sleeps, or the screen locks.
 - Low Power Mode halves the frame rate automatically.
-- Measured: ~0.1% CPU while idle, ~12 MB RSS.
+- Cursor tracking reads the mouse position on the existing tick, never via an event monitor.
+- Measured: ~0.1% CPU while idle, ~13 MB RSS.
 
 ## Art
 

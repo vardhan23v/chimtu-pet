@@ -20,11 +20,13 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
-    brx, bry = 24*s, 22*s
-    by = base - bry - bob
+    brx, bry = 24*s/math.sqrt(sq), 22*s*sq
+    by = base - bry - bob - air
+    base = base - air
     if lie: bry = 15*s; by = base - bry
     if sit: bry = 24*s; by = base - bry - bob
 
@@ -47,6 +49,8 @@ def draw(pose):
         E(d, x, base-lift-2*s, 7*s, 4.5*s, CREAM)
     if lie:
         E(d, cx-14*s, base-3*s, 10*s, 5*s, CREAM); E(d, cx+14*s, base-3*s, 10*s, 5*s, CREAM)
+    elif air > 0:
+        E(d, cx-12*s, by+bry-2*s, 7*s, 4.5*s, CREAM); E(d, cx+12*s, by+bry-2*s, 7*s, 4.5*s, CREAM)
     else:
         sw = 0 if legs is None else max(0, math.sin(legs))*4*s
         sw2 = 0 if legs is None else max(0, -math.sin(legs))*4*s
@@ -64,8 +68,10 @@ def draw(pose):
     # ears
     for e in (-1, 1):
         ex = hx + e*17*s
-        d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+e*2*s, hy-30*s)], fill=ORANGE)
-        d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+e*1*s, hy-25*s)], fill=PINK)
+        tipx, tipy = (e*6*s, -24*s) if air > 0 else (e*2*s, -30*s)
+        if scratch and e == 1: tipx, tipy = e*8*s, -22*s
+        d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+tipx, hy+tipy)], fill=ORANGE)
+        d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+tipx*0.5, hy+tipy*0.82)], fill=PINK)
     E(d, hx, hy, hrx, hry, ORANGE)
     E(d, hx, hy-9*s, hrx*0.75, hry*0.45, DARK_OR)          # forehead shading
     # cream cheeks + muzzle mask
@@ -75,7 +81,9 @@ def draw(pose):
     for e in (-1, 1): E(d, hx+e*10*s+face*1.5*s, hy-10*s, 2.6*s, 1.7*s, CREAM)           # eyebrow spots
     # eyes
     for e in (-1, 1):
-        ex, ey = hx+e*10*s+face*2*s, hy-2*s
+        ex, ey = hx+e*10*s+face*2*s+look*2.2*s, hy-2*s
+        if yawn or (scratch and e == 1):
+            d.arc([ex-3.5*s, ey-2*s, ex+3.5*s, ey+3*s], 200, 340, fill=BLACK, width=int(2*s)); continue
         if blink: d.line([(ex-3.5*s, ey), (ex+3.5*s, ey)], fill=BLACK, width=int(2*s))
         else:
             E(d, ex, ey, 3.4*s, 3.8*s, BLACK); E(d, ex+1.2*s, ey-1.2*s, 1.1*s, 1.1*s, WHITE)
@@ -85,7 +93,13 @@ def draw(pose):
     d.line([(nx, ny+2.5*s), (nx, ny+6*s)], fill=NOSE, width=int(1.3*s))
     d.arc([nx-7*s, ny+2*s, nx-0.5*s, ny+9*s], 0, 120, fill=NOSE, width=int(1.3*s))
     d.arc([nx+0.5*s, ny+2*s, nx+7*s, ny+9*s], 60, 180, fill=NOSE, width=int(1.3*s))
-    if tongue: E(d, nx, ny+10*s, 3.5*s, 3.5*s, PINK)
+    if yawn:
+        E(d, nx, ny+9*s, 5*s, 4.5*s*yawn+1*s, BLACK); E(d, nx, ny+11*s, 3*s, 2*s*yawn, PINK)
+    elif tongue: E(d, nx, ny+10*s, 3.5*s, 3.5*s, PINK)
+    if scratch:
+        # hind leg raised up to the ear, mid-scratch
+        lx, ly = hx+22*s, hy-2*s-scratch*4*s
+        d.rounded_rectangle([lx-5*s, ly, lx+5*s, by+bry-6*s], radius=4*s, fill=ORANGE); E(d, lx, ly, 6.5*s, 5*s, CREAM)
     return img.resize((W*SCALE, H*SCALE), Image.LANCZOS)
 
 def save(name, frames):
@@ -98,8 +112,14 @@ walk_l = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in walk_r]
 sit = [draw({"sit": True, "bob": b, "blink": bl, "wag": w}) for b, bl, w in [(0,False,0),(0.5,False,-2),(0,True,0),(0.5,False,-2)]]
 sleep = [draw({"lie": True, "blink": True, "tongue": False, "wag": w}) for w in (0, 1)]
 wave = [draw({"wave": w}) for w in (0.3, 1.0, 0.5, 1.0)]
+idle_left  = [draw({"bob": b, "blink": bl, "wag": w, "look": -1}) for b, bl, w in [(0,False,0),(0.6,False,-1.5),(1.2,False,-3),(0.6,False,-1.5),(0,False,0),(0,True,0)]]
+idle_right = [draw({"bob": b, "blink": bl, "wag": w, "look": 1})  for b, bl, w in [(0,False,0),(0.6,False,-1.5),(1.2,False,-3),(0.6,False,-1.5),(0,False,0),(0,True,0)]]
+jump = [draw(p) for p in [{"squash": 0.88}, {"air": 10, "squash": 1.06}, {"air": 20}, {"air": 12, "squash": 1.04}, {"squash": 0.9}, {}]]
+scratch = [draw({"scratch": v, "tongue": False, "wag": 1}) for v in (0.2, 1.0, 0.3, 1.0, 0.2, 0.8)]
+yawn = [draw({"yawn": v, "tongue": False, "squash": q}) for v, q in [(0.3,1.0),(0.7,1.03),(1.0,1.06),(1.0,1.06),(0.6,1.02),(0.2,1.0)]]
+save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("walk_right",walk_r),("walk_left",walk_l),("sit",sit),("sleep",sleep),("wave",wave)]
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)

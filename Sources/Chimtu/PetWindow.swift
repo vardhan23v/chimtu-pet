@@ -23,6 +23,7 @@ final class PetWindow: NSWindow {
 final class PetView: NSView {
     let sprite = CALayer()
     var onClick: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -44,6 +45,7 @@ final class PetView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if event.clickCount == 1 { onClick?() }
+        if event.clickCount == 2 { onDoubleClick?() }
+        else if event.clickCount == 1 { onClick?() }
     }
 }
