@@ -43,40 +43,67 @@ final class PetController {
     private(set) var followsCursor = false
     func setFollowCursor(_ on: Bool) {
         followsCursor = on
-        if on { enter("idle", for: 0) } else { chooseNextState() }
-    }
-
-    private func followTick() {
-        let mouse = NSEvent.mouseLocation
-        var f = window.frame
-        let dx = mouse.x - f.midX
-        let dy = mouse.y - f.midY
-        // Faster when far away, easing in as he gets close (px per tick at 12 fps).
-        let dist = hypot(dx, dy)
-        let speed: CGFloat = min(max(dist * 0.22, 8), 48)
-        let arrived = abs(dx) < 50 && abs(dy) < 60
-        if arrived {
-            if !current.name.hasPrefix("idle") { enter("idle", for: 0) }
-            return
-        }
-        let dir: CGFloat = dx > 0 ? 1 : -1
-        let want = dir > 0 ? "walk_right" : "walk_left"
-        if current.name != want { walkDirection = dir; enter(want, for: 0) }
-        // Move toward the cursor on both axes but keep the pet fully on screen.
-        // Move along the straight line toward the cursor.
-        f.origin.x += dx / dist * min(speed, abs(dx) + 1)
-        f.origin.y += dy / dist * min(speed, abs(dy) + 1)
-        if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
-            f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
-            f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
-        }
-        window.setFrameOrigin(f.origin)
+        if on { enter("idle", for: 0) } else { stopMover(); chooseNextState() }
     }
 
     /// Public commands (menu + gestures).
     func jump() { enter("jump", for: 0.6) }
     func sitDown() { enter("sit", for: .random(in: 10...20)) }
     func goToSleep() { enter("sleep", for: .random(in: 30...90)) }
+
+    private var moveTimer: Timer?
+    private var velocity = CGPoint.zero
+
+    /// Called from the sprite tick: decides the pose; movement itself runs on
+    /// the smooth mover below so it isn't quantised to the sprite frame rate.
+    private func followTick() {
+        let mouse = NSEvent.mouseLocation
+        let f = window.frame
+        let dx = mouse.x - f.midX, dy = mouse.y - f.midY
+        let dist = hypot(dx, dy)
+        let arrived = abs(dx) < 50 && abs(dy) < 60
+        if arrived {
+            stopMover()
+            if !current.name.hasPrefix("idle") { enter("idle", for: 0) }
+            return
+        }
+        startMover()
+        let dir: CGFloat = dx > 0 ? 1 : -1
+        let gait = dist > 260 ? "run" : "walk"
+        let want = "\(gait)_\(dir > 0 ? "right" : "left")"
+        if current.name != want { walkDirection = dir; enter(want, for: 0) }
+    }
+
+    /// 60 Hz mover, alive only while chasing. Uses a critically-damped spring
+    /// toward the cursor so motion accelerates, glides, and settles smoothly.
+    private func startMover() {
+        guard moveTimer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.moveStep() }
+        t.tolerance = 1.0 / 240.0
+        RunLoop.main.add(t, forMode: .common)
+        moveTimer = t
+    }
+    private func stopMover() { moveTimer?.invalidate(); moveTimer = nil; velocity = .zero }
+
+    private func moveStep() {
+        let mouse = NSEvent.mouseLocation
+        var f = window.frame
+        let dx = mouse.x - f.midX, dy = mouse.y - f.midY
+        let dt: CGFloat = 1.0 / 60.0
+        let stiffness: CGFloat = 30, damping: CGFloat = 2 * sqrt(stiffness)   // critically damped
+        velocity.x += (stiffness * dx - damping * velocity.x) * dt
+        velocity.y += (stiffness * dy - damping * velocity.y) * dt
+        let maxSpeed: CGFloat = 900
+        let sp = hypot(velocity.x, velocity.y)
+        if sp > maxSpeed { velocity.x *= maxSpeed / sp; velocity.y *= maxSpeed / sp }
+        f.origin.x += velocity.x * dt
+        f.origin.y += velocity.y * dt
+        if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
+            f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
+            f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
+        }
+        window.setFrameOrigin(f.origin)
+    }
 
     private func enter(_ name: String, for seconds: TimeInterval) {
         guard let anim = animations[name] else { return }
@@ -114,7 +141,7 @@ final class PetController {
 
     private func restartTimer() {
         timer?.invalidate()
-        guard isVisible, !isSuspended else { return }
+        guard isVisible, !isSuspended else { stopMover(); return }
         var fps = current.fps
         if ProcessInfo.processInfo.isLowPowerModeEnabled { fps = max(1, fps / 2) }
         let interval = 1.0 / fps

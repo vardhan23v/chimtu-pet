@@ -20,7 +20,7 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
-    look = pose.get("look", 0); air = pose.get("air", 0)*s; sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
@@ -62,13 +62,14 @@ def draw(pose):
             leg(cx+12*s, sw2)
 
     # head: front view, round and wide
-    hx = cx + face*4*s
-    hy = by - bry + 2*s
+    hx = cx + face*(9*s if run else 4*s)
+    hy = by - bry + (5*s if run else 2*s)
     hrx, hry = 25*s, 21*s
     # ears
     for e in (-1, 1):
         ex = hx + e*17*s
         tipx, tipy = (e*6*s, -24*s) if air > 0 else (e*2*s, -30*s)
+        if run: tipx, tipy = (e*9*s - face*6*s, -22*s)   # ears swept back
         if scratch and e == 1: tipx, tipy = e*8*s, -22*s
         d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+tipx, hy+tipy)], fill=ORANGE)
         d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+tipx*0.5, hy+tipy*0.82)], fill=PINK)
@@ -117,9 +118,12 @@ idle_right = [draw({"bob": b, "blink": bl, "wag": w, "look": 1})  for b, bl, w i
 jump = [draw(p) for p in [{"squash": 0.88}, {"air": 10, "squash": 1.06}, {"air": 20}, {"air": 12, "squash": 1.04}, {"squash": 0.9}, {}]]
 scratch = [draw({"scratch": v, "tongue": False, "wag": 1}) for v in (0.2, 1.0, 0.3, 1.0, 0.2, 0.8)]
 yawn = [draw({"yawn": v, "tongue": False, "squash": q}) for v, q in [(0.3,1.0),(0.7,1.03),(1.0,1.06),(1.0,1.06),(0.6,1.02),(0.2,1.0)]]
+run_r = [draw({"bob": abs(math.sin(p))*4, "legs": p*1.0, "wag": math.sin(p)*3, "facing": 1, "run": True, "squash": 1.0 + 0.04*math.sin(p)}) for p in [i*math.pi/3 for i in range(6)]]
+run_l = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in run_r]
+save("run_right", run_r); save("run_left", run_l)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn)]
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)
