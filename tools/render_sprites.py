@@ -8,13 +8,14 @@ SS = 4           # supersample
 W, H = 96, 96    # final frame size (points); rendered at 2x for retina below
 SCALE = 2
 
-CREAM = (250, 233, 200)
-TAN = (226, 170, 96)
-DARK_TAN = (205, 145, 70)
-WHITE = (255, 252, 245)
-BLACK = (40, 30, 28)
-PINK = (236, 150, 150)
-NOSE = (52, 40, 38)
+CREAM = (255, 246, 228)     # white-cream chest, cheeks, muzzle, paws
+TAN = (224, 138, 58)        # Cheems ginger coat
+DARK_TAN = (196, 110, 40)   # shading / ear rims
+WHITE = (255, 250, 240)
+BLACK = (34, 24, 22)
+PINK = (222, 150, 140)
+NOSE = (28, 20, 18)
+LID = (216, 128, 52)        # fur colour used for heavy eyelids
 
 def ellipse(d, cx, cy, rx, ry, fill, outline=None, w=0):
     d.ellipse([cx-rx, cy-ry, cx+rx, cy+ry], fill=fill, outline=outline, width=w)
@@ -65,29 +66,40 @@ def draw_frame(pose):
     hr = 24 * s
     hx = cx + face*4*s
     hy = body_cy - body_ry - 4*s
-    # ears
+    # ears: pointed, dark-rimmed, pink inside
     for e in (-1, 1):
-        ex = hx + e*16*s
-        d.polygon([(ex-8*s, hy-12*s), (ex+8*s, hy-12*s), (ex+e*2*s, hy-32*s)], fill=TAN)
-        d.polygon([(ex-4*s, hy-13*s), (ex+4*s, hy-13*s), (ex+e*1*s, hy-26*s)], fill=PINK)
-    ellipse(d, hx, hy, hr, hr*0.92, TAN)
-    # cheeks (the Cheems chub)
+        ex = hx + e*15*s
+        d.polygon([(ex-9*s, hy-10*s), (ex+9*s, hy-10*s), (ex+e*3*s, hy-34*s)], fill=DARK_TAN)
+        d.polygon([(ex-7*s, hy-11*s), (ex+7*s, hy-11*s), (ex+e*2*s, hy-30*s)], fill=TAN)
+        d.polygon([(ex-3.5*s, hy-13*s), (ex+3.5*s, hy-13*s), (ex+e*1*s, hy-25*s)], fill=PINK)
+    ellipse(d, hx, hy, hr, hr*0.9, TAN)
+    # big white jowl cheeks (the Cheems chub)
     for e in (-1, 1):
-        ellipse(d, hx + e*16*s, hy + 9*s, 13*s, 11*s, CREAM)
-    # muzzle
-    ellipse(d, hx + face*3*s, hy + 8*s, 15*s, 11*s, WHITE)
-    # eyes
+        ellipse(d, hx + e*15*s, hy + 10*s, 14*s, 12*s, CREAM)
+    # longer snout with white blaze up between the eyes
+    ellipse(d, hx + face*4*s, hy + 9*s, 13*s, 11*s, WHITE)
+    d.polygon([(hx-4*s, hy+2*s), (hx+4*s, hy+2*s), (hx+face*1*s, hy-14*s)], fill=WHITE)
+    # sleepy half-lidded eyes with a light frown
     for e in (-1, 1):
-        ex, ey = hx + e*10*s + face*2*s, hy - 3*s
+        ex, ey = hx + e*11*s + face*2*s, hy - 3*s
         if blink:
-            d.line([(ex-4*s, ey), (ex+4*s, ey)], fill=BLACK, width=int(2*s))
+            d.line([(ex-5*s, ey+1*s), (ex+5*s, ey+1*s)], fill=BLACK, width=int(2*s))
         else:
-            ellipse(d, ex, ey, 4*s, 4.5*s, BLACK)
-            ellipse(d, ex+1.5*s, ey-1.5*s, 1.3*s, 1.3*s, WHITE)
-    # nose + mouth
-    nx, ny = hx + face*4*s, hy + 4*s
-    ellipse(d, nx, ny, 4*s, 3*s, NOSE)
-    d.arc([nx-6*s, ny+1*s, nx+6*s, ny+9*s], 20, 160, fill=NOSE, width=int(1.5*s))
+            ellipse(d, ex, ey, 5*s, 4.5*s, BLACK)
+            # heavy upper lid: fur-coloured ellipse covering the top ~45%
+            d.chord([ex-5.5*s, ey-8*s, ex+5.5*s, ey+1*s], 0, 180, fill=LID)
+            ellipse(d, ex+1.5*s, ey+0.5*s, 1.3*s, 1.3*s, WHITE)
+        # brow: slight inward tilt for the tired look
+        d.line([(ex - e*6*s, ey-8*s), (ex + e*5*s, ey-6*s)], fill=DARK_TAN, width=int(1.6*s))
+    # nose + neutral/slightly sad mouth
+    nx, ny = hx + face*5*s, hy + 6*s
+    ellipse(d, nx, ny, 5*s, 3.5*s, NOSE)
+    d.line([(nx, ny+3*s), (nx, ny+7*s)], fill=NOSE, width=int(1.4*s))
+    d.arc([nx-7*s, ny+3*s, nx-0.5*s, ny+9*s], 0, 120, fill=NOSE, width=int(1.4*s))
+    d.arc([nx+0.5*s, ny+3*s, nx+7*s, ny+9*s], 60, 180, fill=NOSE, width=int(1.4*s))
+    # white chest bib peeking below the head
+    ellipse(d, cx, body_cy - body_ry + 8*s, 12*s, 6*s, CREAM)
+
     # waving paw drawn in front of the head
     if wave:
         px = cx + face*24*s
