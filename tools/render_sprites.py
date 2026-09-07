@@ -31,14 +31,14 @@ def draw(pose):
     tx, ty = bx - 26*s, by - 14*s + wag*s
     E(d, tx, ty, 9*s, 9*s, ORANGE); E(d, tx-1*s, ty-1*s, 4.5*s, 4.5*s, CREAM)
 
-    # hind legs (black pants + white paws)
+    # legs (orange with cream paws)
     def leg(x, top, h, swing=0):
-        d.rounded_rectangle([x-5*s+swing, top, x+5*s+swing, top+h], radius=4*s, fill=HOOD)
-        E(d, x+swing, top+h, 6*s, 4*s, WHITE)
+        d.rounded_rectangle([x-5*s+swing, top, x+5*s+swing, top+h], radius=4*s, fill=ORANGE)
+        E(d, x+swing, top+h, 6*s, 4*s, CREAM)
     if lie:
-        E(d, bx-18*s, base-4*s, 9*s, 4.5*s, WHITE); E(d, bx+16*s, base-4*s, 9*s, 4.5*s, WHITE)
+        E(d, bx-18*s, base-4*s, 9*s, 4.5*s, CREAM); E(d, bx+16*s, base-4*s, 9*s, 4.5*s, CREAM)
     elif sit:
-        E(d, bx-14*s, base-5*s, 10*s, 5*s, WHITE)
+        E(d, bx-14*s, base-5*s, 10*s, 5*s, CREAM)
         leg(bx+14*s, by+4*s, base-8*s-(by+4*s)); leg(bx+22*s, by+4*s, base-8*s-(by+4*s))
     else:
         sw = 0 if legs is None else math.sin(legs)*4*s
@@ -47,34 +47,24 @@ def draw(pose):
         if not wave:
             leg(bx+22*s, by+6*s, base-8*s-(by+6*s), sw)
 
-    # body: black hoodie
-    E(d, bx, by, brx, bry, HOOD)
-    E(d, bx-4*s, by-3*s, brx*0.8, bry*0.55, HOOD_LT)     # top highlight
-    E(d, bx, by+8*s, brx*0.9, bry*0.45, HOOD_DK)         # underside
-    # grey spikes along the back
-    for i, sx in enumerate([-22, -12, -2, 8]):
-        x = bx + sx*s; top = by - bry + 2*s
-        d.polygon([(x-5*s, top), (x+5*s, top), (x, top-9*s-(i%2)*2*s)], fill=SPIKE)
-        d.polygon([(x, top), (x+5*s, top), (x, top-9*s-(i%2)*2*s)], fill=SPIKE_DK)
+    # body: orange back, cream belly
+    E(d, bx, by, brx, bry, ORANGE)
+    E(d, bx-2*s, by-4*s, brx*0.85, bry*0.5, DARK_OR)      # darker saddle on the back
+    E(d, bx, by+7*s, brx*0.9, bry*0.5, CREAM)              # belly
 
-    # head (front-right), hood covers top and back
+    # head (front-right)
     hx, hy = bx + 26*s, by - 16*s
     hr = 17*s
-    E(d, hx, hy, hr+3*s, hr+2*s, HOOD)                     # hood shell
-    # hood spikes
-    for sx in (-8, 2):
-        x = hx + sx*s; top = hy - hr - 1*s
-        d.polygon([(x-4*s, top), (x+4*s, top), (x, top-8*s)], fill=SPIKE)
-    # big dino "eye" on the hood
-    ex, ey = hx - 9*s, hy - 8*s
-    E(d, ex, ey, 6.5*s, 6.5*s, EYE_RING); E(d, ex, ey, 4.5*s, 4.5*s, EYE_IRIS); E(d, ex+0.5*s, ey, 2*s, 2*s, EYE_PUPIL); E(d, ex-1.5*s, ey-1.5*s, 1*s, 1*s, WHITE)
-    # face opening: shiba face
-    E(d, hx+4*s, hy+3*s, 13*s, 12*s, ORANGE)
-    E(d, hx+7*s, hy+7*s, 9*s, 7*s, CREAM)                   # muzzle / cheek
-    E(d, hx+3*s, hy+1*s, 6*s, 5*s, ORANGE)
-    # shiba ear poking out of the hood
-    d.polygon([(hx-2*s, hy-8*s), (hx+8*s, hy-9*s), (hx+2*s, hy-19*s)], fill=ORANGE)
-    d.polygon([(hx, hy-9*s), (hx+6*s, hy-10*s), (hx+2*s, hy-16*s)], fill=PINK)
+    # ears: two small triangles
+    for ex_off, tip in ((-10, -20), (2, -21)):
+        x = hx + ex_off*s
+        d.polygon([(x-6*s, hy-9*s), (x+7*s, hy-10*s), (x+2*s, hy+tip*s)], fill=ORANGE)
+        d.polygon([(x-3*s, hy-10*s), (x+5*s, hy-11*s), (x+2*s, hy+(tip+5)*s)], fill=PINK)
+    E(d, hx, hy, hr+1*s, hr, ORANGE)
+    E(d, hx-2*s, hy-6*s, hr*0.8, hr*0.5, DARK_OR)          # forehead shading
+    E(d, hx+7*s, hy+7*s, 10*s, 8*s, CREAM)                 # muzzle / cheek
+    E(d, hx-2*s, hy+9*s, 9*s, 6*s, CREAM)                  # lower cheek / throat
+    E(d, hx+9*s, hy-6*s, 2.4*s, 1.6*s, CREAM)              # eyebrow spot
     # eye (side view: one visible)
     eyx, eyy = hx+7*s, hy
     if blink: d.line([(eyx-3*s, eyy), (eyx+3*s, eyy)], fill=BLACK, width=int(2*s))
@@ -86,12 +76,8 @@ def draw(pose):
     d.arc([nx-8*s, ny+1*s, nx+1*s, ny+8*s], 0, 140, fill=NOSE, width=int(1.3*s))
     if tongue: E(d, nx-4*s, ny+8*s, 3*s, 3.5*s, PINK)
     if wave:
-        # raised front paw, in front of the body
         px, py = bx+30*s, by+2*s-wave*14*s
-        d.rounded_rectangle([px-5*s, py, px+5*s, by+10*s], radius=4*s, fill=HOOD); E(d, px, py, 6*s, 5*s, WHITE)
-    # red bandana at the neck
-    d.polygon([(hx-12*s, hy+12*s), (hx+8*s, hy+14*s), (hx-2*s, hy+24*s)], fill=RED)
-    d.polygon([(hx-12*s, hy+12*s), (hx+8*s, hy+14*s), (hx-1*s, hy+18*s)], fill=RED_DK)
+        d.rounded_rectangle([px-5*s, py, px+5*s, by+10*s], radius=4*s, fill=ORANGE); E(d, px, py, 6*s, 5*s, CREAM)
     return img.resize((W*SCALE, H*SCALE), Image.LANCZOS)
 
 def save(name, frames):
