@@ -15,7 +15,11 @@ final class PetWindow: NSWindow {
         isReleasedWhenClosed = false
         animationBehavior = .none
         contentView = PetView(frame: NSRect(origin: .zero, size: size))
+        NotificationCenter.default.addObserver(forName: NSWindow.willMoveNotification, object: self, queue: .main) { [weak self] _ in self?.onDragStart?() }
+        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: self, queue: .main) { [weak self] _ in self?.onDragEnd?() }
     }
+    var onDragStart: (() -> Void)?
+    var onDragEnd: (() -> Void)?
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }

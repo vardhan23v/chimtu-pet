@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
         menu.addItem(.separator())
-        for (title, sel) in [("Jump", #selector(doJump)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
+        for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -51,6 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func doJump() { pet.jump() }
+    @objc private func doDance() { pet.dance() }
+    @objc private func doSpin() { pet.spin() }
+    @objc private func doShake() { pet.shake() }
     @objc private func doSit() { pet.sitDown() }
     @objc private func doSleep() { pet.goToSleep() }
 

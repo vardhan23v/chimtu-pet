@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.ps
 
 /// Drives Chimtu's behaviour with a single low-rate timer.
 ///
@@ -34,6 +35,14 @@ final class PetController {
             self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
         }
         view.onDoubleClick = { [weak self] in self?.jump() }
+        window.onDragStart = { [weak self] in
+            guard let self, !self.programmaticMove else { return }
+            self.stopMover(); self.enter("held", for: 0)
+        }
+        window.onDragEnd = { [weak self] in
+            guard let self, self.current.name == "held" else { return }
+            self.enter("land", for: 0.45)
+        }
         observeSystem()
         window.orderFrontRegardless()
         enter("idle", for: 6)
@@ -43,6 +52,34 @@ final class PetController {
 
     private var wasAsleep = false
     private var clickCount = 0
+    private var programmaticMove = false
+    private var lastMouse = NSEvent.mouseLocation
+    private var lastMouseMove = Date()
+
+    func dance() { enter("dance", for: 2.5) }
+    func spin() { enter("spin", for: 0.9) }
+    func shake() { enter("shake", for: 0.6) }
+
+    /// True when running on battery below 20%.
+    private var batteryIsLow: Bool {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return false }
+        for src in list {
+            guard let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any] else { continue }
+            let charging = (d[kIOPSIsChargingKey] as? Bool) ?? false
+            let cap = (d[kIOPSCurrentCapacityKey] as? Int) ?? 100
+            let max = (d[kIOPSMaxCapacityKey] as? Int) ?? 100
+            if !charging, max > 0, cap * 100 / max < 20 { return true }
+        }
+        return false
+    }
+
+    /// Seconds since the user last moved the mouse (sampled on the tick).
+    private func noteMouseActivity() {
+        let m = NSEvent.mouseLocation
+        if m != lastMouse { lastMouse = m; lastMouseMove = Date() }
+    }
+    private var userIdleSeconds: TimeInterval { Date().timeIntervalSince(lastMouseMove) }
 
     /// Reactions to system events.
     private func reactToAppSwitch(_ note: Notification) {
@@ -116,7 +153,7 @@ final class PetController {
             f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
             f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
         }
-        window.setFrameOrigin(f.origin)
+        programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
     }
 
     private func enter(_ name: String, for seconds: TimeInterval) {
@@ -132,14 +169,19 @@ final class PetController {
     private func chooseNextState() {
         // Waking up always starts with a yawn and stretch.
         if current.name == "sleep" { enter("yawn", for: 1.5); return }
+        if current.name == "sad" { enter("sleep", for: .random(in: 60...180)); return }
+        // Nobody around for 5 minutes: get lonely, then nap.
+        if userIdleSeconds > 300, current.name != "sleep" { enter("sad", for: 3); return }
         // Mostly rests. Walking is the only state that moves the window.
         let roll = Double.random(in: 0..<1)
         switch roll {
-        case ..<0.40: enter("idle", for: .random(in: 5...12))
-        case ..<0.65: enter("sit", for: .random(in: 6...15))
-        case ..<0.77: enter("sleep", for: .random(in: 15...40))
-        case ..<0.85: enter("scratch", for: 1.5)
-        case ..<0.88: enter("jump", for: 0.6)
+        case ..<0.40: enter(batteryIsLow ? "tired" : "idle", for: .random(in: 5...12))
+        case ..<0.62: enter("sit", for: .random(in: 6...15))
+        case ..<0.74: enter("sleep", for: .random(in: 15...40))
+        case ..<0.80: enter("scratch", for: 1.5)
+        case ..<0.83: enter("jump", for: 0.6)
+        case ..<0.86: enter("dance", for: 2.5)
+        case ..<0.88: enter(Bool.random() ? "spin" : "shake", for: 0.9)
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -175,13 +217,14 @@ final class PetController {
     }
 
     private func tick() {
+        noteMouseActivity()
         if current.name.hasPrefix("idle"), let variant = idleVariantForCursor(), variant.name != current.name {
             current = variant   // same frame count and rate, so keep the frame index
         }
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
@@ -189,7 +232,7 @@ final class PetController {
         if current.name.hasPrefix("walk") {
             var f = window.frame
             f.origin.x += walkDirection * 2.5
-            window.setFrameOrigin(f.origin)
+            programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
         }
         if Date() >= stateEndsAt { chooseNextState() }
     }
