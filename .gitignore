@@ -1,3 +1,6 @@
 .build/
 dist/
 .DS_Store
+Resources/frames/
+Resources/peek.png
+Resources/Chimtu.iconset/

@@ -138,9 +138,13 @@ def draw(pose):
         d.rounded_rectangle([lx-5*s, ly, lx+5*s, by+bry-6*s], radius=4*s, fill=ORANGE); E(d, lx, ly, 6.5*s, 5*s, CREAM)
     return img.resize((W*SCALE, H*SCALE), Image.LANCZOS)
 
+def compress(img):
+    """Palette PNG (128 colours) with alpha preserved; ~4-6x smaller than RGBA."""
+    return img.quantize(colors=128, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
+
 def save(name, frames):
     os.makedirs(OUT, exist_ok=True)
-    for i, f in enumerate(frames): f.save(f"{OUT}/{name}_{i:02d}.png")
+    for i, f in enumerate(frames): compress(f).save(f"{OUT}/{name}_{i:02d}.png", optimize=True)
 
 idle = [draw({"bob": b, "blink": bl, "wag": w}) for b, bl, w in [(0,False,0),(0.6,False,-1.5),(1.2,False,-3),(0.6,False,-1.5),(0,False,0),(0,True,0)]]
 walk_r = [draw({"bob": abs(math.sin(p))*2, "legs": p, "wag": math.sin(p)*2, "facing": 1}) for p in [i*math.pi/3 for i in range(6)]]
