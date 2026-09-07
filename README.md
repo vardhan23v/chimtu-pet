@@ -1,11 +1,11 @@
 # Chimtu — a macOS desktop pet
 
-[![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange?logo=swift&logoColor=white)](https://www.swift.org/)
-[![AppKit](https://img.shields.io/badge/AppKit-macOS-blue?logo=apple&logoColor=white)](https://developer.apple.com/documentation/appkit)
-[![Swift Package Manager](https://img.shields.io/badge/Swift%20Package%20Manager-supported-orange?logo=swift&logoColor=white)](https://swift.org/package-manager/)
-[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Pillow](https://img.shields.io/badge/Assets-Pillow-green?logo=python&logoColor=white)](https://python-pillow.org/)
-[![macOS](https://img.shields.io/badge/macOS-13%2B-black?logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange?style=for-the-badge&logo=swift&logoColor=white)](https://www.swift.org/)
+[![AppKit](https://img.shields.io/badge/AppKit-macOS-blue?style=for-the-badge&logo=apple&logoColor=white)](https://developer.apple.com/documentation/appkit)
+[![Swift Package Manager](https://img.shields.io/badge/Swift%20Package%20Manager-supported-orange?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org/package-manager/)
+[![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Pillow](https://img.shields.io/badge/Assets-Pillow-green?style=for-the-badge&logo=python&logoColor=white)](https://python-pillow.org/)
+[![macOS](https://img.shields.io/badge/macOS-13%2B-black?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 
 Chimtu is a tiny, animated macOS desktop companion. He is a Telugu-meme Cheems
 Shiba in a spiky black dino hoodie with a red bandana, rendered as transparent
