@@ -9,5 +9,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/frames"
 cp .build/release/Chimtu "$APP/Contents/MacOS/Chimtu"
 cp Resources/frames/*.png "$APP/Contents/Resources/frames/"
 cp Info.plist "$APP/Contents/Info.plist"
+cp Resources/Chimtu.icns "$APP/Contents/Resources/Chimtu.icns"
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
 echo "built $APP"
