@@ -51,7 +51,9 @@ final class PetController {
         var f = window.frame
         let dx = mouse.x - f.midX
         let dy = mouse.y - f.midY
-        let speed: CGFloat = 4
+        // Faster when far away, easing in as he gets close (px per tick at 12 fps).
+        let dist = hypot(dx, dy)
+        let speed: CGFloat = min(max(dist * 0.22, 8), 48)
         let arrived = abs(dx) < 50 && abs(dy) < 60
         if arrived {
             if !current.name.hasPrefix("idle") { enter("idle", for: 0) }
@@ -61,8 +63,9 @@ final class PetController {
         let want = dir > 0 ? "walk_right" : "walk_left"
         if current.name != want { walkDirection = dir; enter(want, for: 0) }
         // Move toward the cursor on both axes but keep the pet fully on screen.
-        f.origin.x += min(max(dx, -speed), speed)
-        f.origin.y += min(max(dy, -speed), speed)
+        // Move along the straight line toward the cursor.
+        f.origin.x += dx / dist * min(speed, abs(dx) + 1)
+        f.origin.y += dy / dist * min(speed, abs(dy) + 1)
         if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
             f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
             f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
