@@ -20,7 +20,7 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
-    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
@@ -70,6 +70,7 @@ def draw(pose):
         ex = hx + e*17*s
         tipx, tipy = (e*6*s, -24*s) if air > 0 else (e*2*s, -30*s)
         if run: tipx, tipy = (e*9*s - face*6*s, -22*s)   # ears swept back
+        if alert: tipx, tipy = (e*1*s, -35*s)             # ears straight up
         if scratch and e == 1: tipx, tipy = e*8*s, -22*s
         d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+tipx, hy+tipy)], fill=ORANGE)
         d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+tipx*0.5, hy+tipy*0.82)], fill=PINK)
@@ -85,6 +86,10 @@ def draw(pose):
         ex, ey = hx+e*10*s+face*2*s+look*2.2*s, hy-2*s
         if yawn or (scratch and e == 1):
             d.arc([ex-3.5*s, ey-2*s, ex+3.5*s, ey+3*s], 200, 340, fill=BLACK, width=int(2*s)); continue
+        if happy:
+            d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
+        if alert:
+            E(d, ex, ey, 4.3*s, 4.7*s, BLACK); E(d, ex+1.3*s, ey-1.5*s, 1.5*s, 1.5*s, WHITE); continue
         if blink: d.line([(ex-3.5*s, ey), (ex+3.5*s, ey)], fill=BLACK, width=int(2*s))
         else:
             E(d, ex, ey, 3.4*s, 3.8*s, BLACK); E(d, ex+1.2*s, ey-1.2*s, 1.1*s, 1.1*s, WHITE)
@@ -121,9 +126,13 @@ yawn = [draw({"yawn": v, "tongue": False, "squash": q}) for v, q in [(0.3,1.0),(
 run_r = [draw({"bob": abs(math.sin(p))*4, "legs": p*1.0, "wag": math.sin(p)*3, "facing": 1, "run": True, "squash": 1.0 + 0.04*math.sin(p)}) for p in [i*math.pi/3 for i in range(6)]]
 run_l = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in run_r]
 save("run_right", run_r); save("run_left", run_l)
+alert = [draw(p) for p in [{"alert":True,"tongue":False,"squash":0.94},{"alert":True,"tongue":False,"air":9,"squash":1.04},{"alert":True,"tongue":False},
+                           {"alert":True,"tongue":False,"face":-1},{"alert":True,"tongue":False,"face":1},{"alert":True,"tongue":False}]]
+happy = [draw({"happy":True,"face":f,"bob":b,"wag":w,"squash":q}) for f,b,w,q in [(-1,0,-3,0.97),(-1,2,3,1.03),(0,3,-3,1.04),(1,2,3,1.03),(1,0,-3,0.97),(0,1,3,1.0)]]
+save("alert", alert); save("happy", happy)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn)]
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)

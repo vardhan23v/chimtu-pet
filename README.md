@@ -2,7 +2,8 @@
 
 Chimtu is the Telugu-meme Cheems Shiba, living at the bottom of your screen.
 He idles, sits, naps, wanders a little, scratches an ear, and yawns when he
-wakes up. His eyes follow your cursor. Click him to wave, double-click to jump.
+wakes up. His eyes follow your cursor. Click him to wave or wiggle, double-click to jump.
+He perks up and looks around when you switch apps, and greets you when you unlock the screen.
 Menu-bar icon 🐕: Hide/Show, Jump, Sit Down, Go to Sleep, Follow Cursor, Launch at Login, Quit.
 Follow Cursor makes him trot after your mouse anywhere on screen and wait beside it.
 

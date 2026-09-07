@@ -28,7 +28,11 @@ final class PetController {
         self.current = animations["idle"]!
         window = PetWindow(size: Sprites.size)
         placeAtBottom()
-        view.onClick = { [weak self] in self?.enter("wave", for: 1.2) }
+        view.onClick = { [weak self] in
+            guard let self else { return }
+            self.clickCount += 1
+            self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
+        }
         view.onDoubleClick = { [weak self] in self?.jump() }
         observeSystem()
         window.orderFrontRegardless()
@@ -38,6 +42,16 @@ final class PetController {
     // MARK: state machine
 
     private var wasAsleep = false
+    private var clickCount = 0
+
+    /// Reactions to system events.
+    private func reactToAppSwitch(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        guard isVisible, !isSuspended else { return }
+        if ["jump", "wave", "happy"].contains(current.name), Date() < stateEndsAt { return }
+        enter("alert", for: 1.1)
+    }
 
     /// Follow-cursor mode: Chimtu trots toward the mouse and idles beside it.
     private(set) var followsCursor = false
@@ -167,7 +181,7 @@ final class PetController {
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
@@ -199,9 +213,12 @@ final class PetController {
         ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
+        ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppSwitch(n) }
         let dc = DistributedNotificationCenter.default()
         dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
-        dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
+        dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            self?.suspend(false); self?.enter("happy", for: 1.5)   // welcome back
+        }
         NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in self?.restartTimer() }
     }
 

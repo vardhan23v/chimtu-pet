@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Follow Cursor makes him chase your mouse", action: nil, keyEquivalent: "")
+        let about = NSMenuItem(title: "Click: wave / wiggle · Double-click: jump · He perks up when you switch apps", action: nil, keyEquivalent: "")
         about.isEnabled = false
         menu.addItem(about)
         menu.addItem(.separator())
