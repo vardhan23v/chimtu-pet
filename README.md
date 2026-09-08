@@ -1,44 +1,153 @@
 # Chimtu — a macOS desktop pet
 
-![build](https://github.com/vardhan23v/chimtu/actions/workflows/release.yml/badge.svg)
+[![Build & Release](https://github.com/vardhan23v/chimtu-pet/actions/workflows/release.yml/badge.svg)](https://github.com/vardhan23v/chimtu-pet/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/vardhan23v/chimtu-pet?style=flat-square)](https://github.com/vardhan23v/chimtu-pet/releases/latest)
 
-Chimtu is the Telugu-meme Cheems Shiba, living at the bottom of your screen.
-He idles, sits, naps, wanders a little, scratches an ear, and yawns when he
-wakes up. His eyes follow your cursor. Click him to wave or wiggle, double-click to jump.
-He perks up and looks around when you switch apps, and greets you when you unlock the screen.
-Drag him and he dangles, then lands with a squash. Left alone for five minutes he gets
-lonely and naps. On low battery he looks tired. Now and then he dances, spins, or shakes.
-Menu-bar icon 🐕: Hide/Show, Jump, Dance, Spin, Shake, Sit Down, Go to Sleep, Follow Cursor, Launch at Login, Quit.
-Follow Cursor makes him trot after your mouse anywhere on screen and wait beside it.
+[![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange?style=for-the-badge&logo=swift&logoColor=white)](https://www.swift.org/)
+[![AppKit](https://img.shields.io/badge/AppKit-macOS-blue?style=for-the-badge&logo=apple&logoColor=white)](https://developer.apple.com/documentation/appkit)
+[![Swift Package Manager](https://img.shields.io/badge/Swift%20Package%20Manager-supported-orange?style=for-the-badge&logo=swift&logoColor=white)](https://swift.org/package-manager/)
+[![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Pillow](https://img.shields.io/badge/Assets-Pillow-green?style=for-the-badge&logo=python&logoColor=white)](https://python-pillow.org/)
+[![macOS](https://img.shields.io/badge/macOS-13%2B-black?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 
-## Install (no build needed)
+Chimtu is a tiny, animated macOS desktop companion: a chubby Shiba named after
+the Telugu internet meme, rendered as transparent sprite frames and living on
+your screen. He idles, naps, follows your cursor, and reacts to what you do,
+while using about 0.1% CPU.
 
-1. Download `Chimtu.zip` from the [latest release](https://github.com/vardhan23v/chimtu/releases/latest).
+> `Resources/peek.png` and `Resources/contact-sheet.png` are generated previews
+> rather than tracked screenshots.
+> They are intentionally ignored by Git; generate them locally with the asset
+> command below when you want to inspect the artwork.
+
+## Install
+
+1. Download `Chimtu.zip` from the [latest release](https://github.com/vardhan23v/chimtu-pet/releases/latest).
 2. Unzip and drag `Chimtu.app` into `/Applications`.
-3. First launch: right-click the app and choose **Open** (it is not notarized), then look for 🐕 in the menu bar.
+3. On first launch, right-click the app and choose **Open** (it is ad-hoc
+   signed, not notarized). Chimtu then appears as 🐕 in the menu bar.
 
-## Build from source
+## Features
+
+- Idle, sit, sleep, walk, run, scratch, yawn, wave, jump, dance, spin, shake,
+  alert, happy, sad, and tired animations.
+- Cursor-aware idle poses: Chimtu looks toward the mouse.
+- Click to alternate between a wave and a happy wiggle; double-click to jump.
+- Drag Chimtu to pick him up; he dangles, then lands with a squash.
+- Reacts when you switch applications and greets you after the screen unlocks.
+- Gets lonely after five minutes without mouse movement, then goes to sleep.
+- Shows a tired animation when the Mac is on battery below 20%.
+- Optional **Follow Cursor** mode, with smooth movement toward the pointer.
+- Menu-bar controls for visibility, actions, cursor following, Launch at Login,
+  and quitting.
+
+## Menu-bar controls
+
+Click Chimtu's 🐕 menu-bar icon to use:
+
+| Action | What it does |
+| --- | --- |
+| Hide Chimtu / Show Chimtu | Toggle the pet window |
+| Jump, Dance, Spin, Shake | Trigger an animation immediately |
+| Sit Down | Keep Chimtu seated for a while |
+| Go to Sleep | Put Chimtu to sleep |
+| Follow Cursor | Have Chimtu move toward and wait beside the pointer |
+| Launch at Login | Register or unregister the app with macOS |
+| Quit Chimtu | Exit the app |
+
+The menu also shows the pointer and app-switch gestures. Chimtu has no Dock
+icon and does not open a normal application window.
+
+## Requirements
+
+- macOS 13 or newer
+- Swift 5.9 or newer (Xcode or the macOS Command Line Tools)
+- Python 3 with Pillow only when regenerating the sprite artwork
+
+## Build and run
+
+The repository includes a build script that creates a self-contained
+`dist/Chimtu.app` bundle without requiring an Xcode project:
 
 ```sh
-./build.sh          # needs only the Swift toolchain (Command Line Tools)
+./build.sh
 open dist/Chimtu.app
 ```
 
-## Why it is easy on the battery
+The script regenerates missing frames, builds the Swift executable in release
+mode, copies the frames and icon into the app bundle, and applies an ad-hoc
+signature when code signing is available. To remove the Swift build cache after
+building:
 
-- No Dock icon, no windows besides the transparent pet layer (`LSUIElement`).
-- Frames are pre-decoded PNGs swapped in as `CALayer.contents`; nothing is drawn per frame.
-- One `Timer` at the animation's own rate (1–8 fps) with 50% tolerance so macOS can coalesce wakeups.
-- The timer is torn down when the pet is hidden, the display sleeps, the Mac sleeps, or the screen locks.
-- Low Power Mode halves the frame rate automatically.
-- Cursor tracking reads the mouse position on the existing tick, never via an event monitor.
-- Measured: ~0.1% CPU while idle, ~13 MB RSS.
+```sh
+./build.sh clean
+```
 
-## Art
+For a compile-only check:
 
-`tools/render_sprites.py` draws every frame procedurally (Pillow). Re-run it and
-`./build.sh` to change the look. `Resources/contact-sheet.png` previews all states.
+```sh
+swift build -c release
+```
+
+## Architecture
+
+Chimtu is a small Swift Package Manager executable built with AppKit:
+
+- `AppDelegate` creates the status-bar menu and connects menu actions.
+- `PetController` owns the animation state machine, movement, gestures,
+  visibility, system-event reactions, and power-aware timing.
+- `PetWindow` provides a borderless, transparent, floating window and a
+  `CALayer`-backed view that swaps pre-decoded `CGImage` frames.
+- `Sprites` loads the animation sequences from the app bundle.
+- `main.swift` configures the app as an accessory (menu-bar-only) application.
+
+## Battery behavior
+
+The pet is designed to stay lightweight while idle:
+
+- Animation frames are decoded once and swapped into a `CALayer`; Chimtu does
+  not redraw the artwork every frame.
+- Each animation uses one timer at its own frame rate, with tolerance so macOS
+  can coalesce wakeups.
+- The animation timer stops when Chimtu is hidden, the display or Mac sleeps,
+  or the screen locks.
+- Low Power Mode halves the animation frame rate.
+- Cursor tracking samples the pointer on the existing animation tick. Follow
+  Cursor adds a 60 Hz movement timer only while Chimtu is actively moving.
+
+## Artwork and previews
+
+The sprite artwork is generated procedurally with Pillow:
+
+```sh
+python3 -m pip install Pillow
+python3 tools/render_sprites.py Resources/frames
+```
+
+The renderer writes the animation frames to `Resources/frames/` and creates:
+
+- `Resources/contact-sheet.png` — all animation states in one sheet
+- `Resources/peek.png` — a small preview of the idle frames
+
+Those generated files, along with `dist/` and `.build/`, are ignored so source
+control contains only the renderer and the app's source assets.
+
+## Project layout
+
+| Path | Purpose |
+| --- | --- |
+| `Sources/Chimtu/` | Swift AppKit application source |
+| `Resources/Chimtu.icns` | Application icon |
+| `tools/render_sprites.py` | Procedural sprite and preview generator |
+| `Package.swift` | Swift Package Manager manifest |
+| `Info.plist` | App bundle metadata and macOS behavior |
+| `build.sh` | Release app-bundle build script |
+
+## Releases
+
+Every push to `main` builds the app on GitHub Actions. Pushing a tag such as
+`v1.1.0` publishes a GitHub Release with `Chimtu.zip` attached.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
