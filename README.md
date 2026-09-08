@@ -22,10 +22,25 @@ while using about 0.1% CPU.
 
 ## Install
 
-1. Download `Chimtu.zip` from the [latest release](https://github.com/vardhan23v/chimtu-pet/releases/latest).
-2. Unzip and drag `Chimtu.app` into `/Applications`.
-3. On first launch, right-click the app and choose **Open** (it is ad-hoc
+Grab the build for your machine from the [latest release](https://github.com/vardhan23v/chimtu-pet/releases/latest):
+
+**macOS (Apple Silicon and Intel, universal binary)**
+
+1. Download `Chimtu-macOS.zip`, unzip, and drag `Chimtu.app` into `/Applications`.
+2. On first launch, right-click the app and choose **Open** (it is ad-hoc
    signed, not notarized). Chimtu then appears as 🐕 in the menu bar.
+
+**Windows 10/11**
+
+1. Download `Chimtu-Windows.zip` and unzip `Chimtu.exe` anywhere.
+2. Run it. SmartScreen may ask once; choose **More info → Run anyway** (the
+   exe is unsigned). Right-click Chimtu for his menu.
+
+The Windows build (`windows/chimtu.py`, Tk + Python) shares the same sprite
+frames and behaviours as the native macOS app: cursor-aware idle, click, hold,
+drag, double-click, Follow Cursor, app-switch and low-battery reactions, and the
+hourly howl. Run it from source with `python windows/chimtu.py` after rendering
+the frames.
 
 ## Features
 
@@ -63,7 +78,7 @@ icon and does not open a normal application window.
 
 ## Requirements
 
-- macOS 13 or newer
+- macOS 13 or newer (universal: Apple Silicon and Intel), or Windows 10/11 for the Tk build
 - Swift 5.9 or newer (Xcode or the macOS Command Line Tools)
 - Python 3 with Pillow only when regenerating the sprite artwork
 
@@ -144,12 +159,14 @@ control contains only the renderer and the app's source assets.
 | `tools/render_sprites.py` | Procedural sprite and preview generator |
 | `Package.swift` | Swift Package Manager manifest |
 | `Info.plist` | App bundle metadata and macOS behavior |
-| `build.sh` | Release app-bundle build script |
+| `build.sh` | Release app-bundle build script (universal binary) |
+| `windows/chimtu.py` | Windows port (Tk), packaged to `Chimtu.exe` by CI |
 
 ## Releases
 
 Every push to `main` builds the app on GitHub Actions. Pushing a tag such as
-`v1.1.0` publishes a GitHub Release with `Chimtu.zip` attached.
+`v1.3.0` publishes a GitHub Release with `Chimtu-macOS.zip` and
+`Chimtu-Windows.zip` attached.
 
 ## License
 

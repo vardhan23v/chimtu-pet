@@ -10,6 +10,31 @@ permissions:
   contents: write
 
 jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: python -m pip install --quiet pillow pyinstaller
+      - name: Render frames
+        run: python tools/render_sprites.py Resources/frames
+      - name: Build Chimtu.exe
+        run: pyinstaller --noconfirm --onefile --windowed --name Chimtu --icon Resources/Chimtu.ico --add-data "Resources/frames;frames" windows/chimtu.py
+      - name: Zip
+        run: Compress-Archive -Path dist/Chimtu.exe -DestinationPath Chimtu-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Chimtu-Windows
+          path: Chimtu-Windows.zip
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Chimtu-Windows.zip
+
   build:
     runs-on: macos-14
     steps:
@@ -22,14 +47,14 @@ jobs:
       - name: Build Chimtu.app
         run: PYTHON=python ./build.sh
       - name: Zip
-        run: cd dist && zip -qry ../Chimtu.zip Chimtu.app
+        run: cd dist && zip -qry ../Chimtu-macOS.zip Chimtu.app
       - uses: actions/upload-artifact@v4
         with:
-          name: Chimtu
-          path: Chimtu.zip
+          name: Chimtu-macOS
+          path: Chimtu-macOS.zip
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Chimtu.zip
+          files: Chimtu-macOS.zip
           generate_release_notes: true

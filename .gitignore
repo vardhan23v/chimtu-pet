@@ -5,3 +5,7 @@ Resources/frames/
 Resources/peek.png
 Resources/Chimtu.iconset/
 Resources/contact-sheet.png
+.build-*/
+windows/dist/
+windows/build/
+*.spec
