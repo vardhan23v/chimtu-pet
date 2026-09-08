@@ -23,10 +23,10 @@ SPECS = {  # name: (frames, fps)
     "sit": (4, 3), "sleep": (2, 1), "wave": (4, 6), "jump": (6, 10), "scratch": (6, 6), "yawn": (6, 4),
     "alert": (6, 6), "happy": (6, 8), "held": (4, 4), "land": (4, 10), "spin": (6, 7), "dance": (6, 8),
     "shake": (6, 12), "sad": (6, 3), "tired": (6, 3), "eat": (6, 6), "love": (6, 6), "howl": (6, 5),
-    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4), "typing": (6, 10),
+    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4), "typing": (6, 10), "groove": (6, 8), "focus": (6, 3), "wink": (4, 6), "celebrate": (6, 10),
 }
 GESTURES = {"wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin",
-            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing"}
+            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate"}
 W, H = 224, 192 + 40   # 40 px headroom for the speech bubble
 SPRITE_Y = 40
 IDLE_LINES = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
@@ -67,6 +67,7 @@ class Chimtu:
         self.press_t = 0; self.press_pos = None; self.dragging = False
         self.fg_window = self.foreground()
         self.after_id = None
+        self.started = time.time(); self.n_pets = 0; self.n_keys = 0; self.focus_until = 0
 
         c = self.canvas
         c.bind("<ButtonPress-1>", self.on_press); c.bind("<B1-Motion>", self.on_drag); c.bind("<ButtonRelease-1>", self.on_release)
@@ -132,6 +133,7 @@ class Chimtu:
         self.after_id = self.root.after(int(1000 / fps), self.tick)
 
     def next_state(self):
+        if getattr(self, "focus_until", 0) > time.time(): return self.enter("focus", 0)
         if self.state == "sleep": return self.enter("yawn", 1.5)
         if self.state == "sad": return self.enter("sleep", random.uniform(60, 180))
         if time.time() - self.last_move > 300: return self.enter("sad", 3)
@@ -149,6 +151,7 @@ class Chimtu:
             elif random.random() < 0.5: self.enter("bark", 1.0); self.say(random.choice(["Bow!", "Bow bow!", "Chimtu!"]))
             else: self.enter("beg", 2.5); self.say(random.choice(["Treat?", "Pleeease", "Em chestunnav?"]))
         elif r < 0.93: self.enter("idle", 4); self.say(random.choice(IDLE_LINES))
+        elif r < 0.94: self.enter("wink", 1.0)
         else:
             sw = self.root.winfo_screenwidth()
             self.walk_dir = random.choice([1, -1])
@@ -167,6 +170,7 @@ class Chimtu:
                 self.state, self.frame, self.ends = "sniff", 0, time.time() + 1.2; self.say("sniff sniff")
         n, enter, back = self.keys_down()
         now = time.time()
+        if n: self.n_keys += n
         if n: self.key_times = [t for t in getattr(self, "key_times", []) if now - t < 3] + [now] * n
         else: self.key_times = [t for t in getattr(self, "key_times", []) if now - t < 3]
         busy = self.state in GESTURES and now < self.ends
@@ -245,7 +249,7 @@ class Chimtu:
     def on_release(self, e):
         if self.dragging:
             self.dragging = False; self.enter("land", 0.45); return
-        if time.time() - self.press_t > 0.5: self.say(random.choice(["❤", "Good boy vibes", "Chimtuuu"])); return self.enter("love", 2.0)
+        if time.time() - self.press_t > 0.5: self.n_pets += 1; self.say(random.choice(["❤", "Good boy vibes", "Chimtuuu"])); return self.enter("love", 2.0)
         self.click_count += 1
         self.enter("happy" if self.click_count % 2 == 0 else "wave", 1.2)
 
@@ -260,6 +264,12 @@ class Chimtu:
                                 ("Sit Down", "sit", 15), ("Go to Sleep", "sleep", 60)]:
             m.add_command(label=label, command=lambda s=st, t=secs: self.enter(s, t))
         m.add_separator()
+        m.add_command(label="Start Focus (25 min)", command=self.start_focus)
+        rm = tk.Menu(m, tearoff=0)
+        for mins in (5, 10, 30, 60): rm.add_command(label=f"In {mins} minutes", command=lambda t=mins: self.remind(t))
+        m.add_cascade(label="Remind Me", menu=rm)
+        m.add_command(label="How's your day?", command=self.hows_your_day)
+        m.add_separator()
         m.add_command(label="Quit Chimtu", command=self.root.destroy)
         self.menu = m
     def popup(self, e):
@@ -269,6 +279,21 @@ class Chimtu:
         self.follow = self.follow_var.get()
         if self.follow: self.enter("idle", 0)
         else: self.stop_mover(); self.next_state()
+    def start_focus(self, minutes=25):
+        self.focus_until = time.time() + minutes * 60
+        self.enter("focus", 0); self.say(f"Focus: {minutes} min. Let's go!")
+        self.root.after(minutes * 30 * 1000, lambda: self.say("Halfway. Nice.") if self.focus_until > time.time() else None)
+        def done():
+            self.focus_until = 0; self.enter("celebrate", 3); self.say("Break time!")
+        self.root.after(minutes * 60 * 1000, done)
+    def remind(self, minutes):
+        from tkinter import simpledialog
+        text = simpledialog.askstring("Chimtu", f"Remind you about what? (in {minutes} min)") or "Reminder!"
+        self.say(f"Okay! In {minutes} min.")
+        self.root.after(minutes * 60 * 1000, lambda: (self.enter("bark", 1.5), self.say(text, 8)))
+    def hows_your_day(self):
+        mins = int((time.time() - self.started) / 60)
+        self.enter("wink", 1.5); self.say(f"{mins} min with you · {self.n_pets} pets · {self.n_keys} keys")
     def hourly(self):
         if self.state != "sleep": self.enter("howl", 2.0); self.say(time.strftime("Awooo, it's %I %p").replace(" 0", " "))
         self.root.after(60 * 60 * 1000, self.hourly)

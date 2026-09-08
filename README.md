@@ -47,6 +47,12 @@ the frames.
 - Idle, sit, sleep, walk, run, scratch, yawn, wave, jump, dance, spin, shake,
   roll over, dig, sneeze, howl, eat, love, sniff, fetch, bark, beg, alert,
   happy, sad, and tired animations.
+- Grooves when Music or Spotify starts playing, and shows the track name.
+- Focus timer (25 min): he sits with reading glasses, checks in halfway, and
+  celebrates when time is up. Reminders: pick 5/10/30/60 minutes and a note;
+  he barks it at you.
+- Hats (party hat, cap, crown), "How's your day?" stats, and Add a Friend for
+  up to four more Chimtus.
 - Speech bubbles with short Telugu-meme lines, greetings, and the hourly time.
 - Copy something and he sniffs it. Drop a file on him and he fetches it (opens it).
 - Size menu: Small, Normal, Large, Huge. Sleeps longer between 11 pm and 6 am.

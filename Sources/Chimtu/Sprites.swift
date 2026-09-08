@@ -14,6 +14,12 @@ enum Sprites {
     static let bubbleHeight: CGFloat = 34
     static var windowSize: CGSize { CGSize(width: size.width, height: size.height + bubbleHeight) }
 
+    static func hat(_ name: String) -> CGImage? {
+        guard let url = Bundle.main.url(forResource: "hat_\(name)", withExtension: "png", subdirectory: "frames"),
+              let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+    }
+
     static func load() -> [String: Animation] {
         let specs: [(String, Int, Double)] = [
             ("idle", 6, 4), ("idle_left", 6, 4), ("idle_right", 6, 4),
@@ -22,7 +28,7 @@ enum Sprites {
             ("jump", 6, 10), ("scratch", 6, 6), ("yawn", 6, 4), ("alert", 6, 6), ("happy", 6, 8),
             ("held", 4, 4), ("land", 4, 10), ("spin", 6, 7), ("dance", 6, 8), ("shake", 6, 12), ("sad", 6, 3), ("tired", 6, 3),
             ("eat", 6, 6), ("love", 6, 6), ("howl", 6, 5), ("sneeze", 6, 8), ("dig", 6, 8), ("roll", 6, 6),
-            ("sniff", 6, 8), ("fetch", 6, 6), ("bark", 6, 8), ("beg", 6, 4), ("typing", 6, 10),
+            ("sniff", 6, 8), ("fetch", 6, 6), ("bark", 6, 8), ("beg", 6, 4), ("typing", 6, 10), ("groove", 6, 8), ("focus", 6, 3), ("wink", 4, 6), ("celebrate", 6, 10),
         ]
         var out: [String: Animation] = [:]
         for (name, count, fps) in specs {

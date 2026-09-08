@@ -32,14 +32,15 @@ final class PetController {
         placeAtBottom()
         view.onClick = { [weak self] in
             guard let self else { return }
-            self.clickCount += 1
+            self.clickCount += 1; self.stats.clicks += 1
             self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
         }
         view.onDoubleClick = { [weak self] in self?.jump() }
-        view.onLongPress = { [weak self] in self?.enter("love", for: 2.0); self?.say(["❤️", "Good boy vibes", "Chimtuuu"].randomElement()!) }
+        view.onLongPress = { [weak self] in self?.stats.pets += 1; self?.enter("love", for: 2.0); self?.say(["❤️", "Good boy vibes", "Chimtuuu"].randomElement()!) }
         view.onFileDrop = { [weak self] urls in self?.fetch(urls) }
         apply(scale: UserDefaults.standard.double(forKey: "petScale").nonZeroOr(1))
         clipboardCount = NSPasteboard.general.changeCount
+        if hatName != "none" { view.setHat(Sprites.hat(hatName)) }
         scheduleHourlyHowl()
         window.onDragStart = { [weak self] in
             guard let self, !self.programmaticMove else { return }
@@ -63,6 +64,75 @@ final class PetController {
     private var lastMouseMove = Date()
 
     func dance() { enter("dance", for: 2.5) }
+
+    // MARK: stats for "How's your day?"
+    private var stats = (pets: 0, treats: 0, clicks: 0, keys: 0, launched: Date())
+    func howIsYourDay() {
+        let mins = Int(Date().timeIntervalSince(stats.launched) / 60)
+        enter("wink", for: 1.5)
+        say("\(mins) min with you · \(stats.pets) pets · \(stats.treats) treats · \(stats.keys) keys")
+    }
+
+    // MARK: hats
+    private(set) var hatName: String = UserDefaults.standard.string(forKey: "hat") ?? "none"
+    func setHat(_ name: String) {
+        hatName = name; UserDefaults.standard.set(name, forKey: "hat")
+        view.setHat(name == "none" ? nil : Sprites.hat(name))
+        if name != "none" { react("happy", for: 1.2, say: "Fancy!", force: true) }
+    }
+
+    // MARK: focus timer
+    private var focusTimer: Timer?
+    private var focusEnds: Date?
+    var focusActive: Bool { focusEnds != nil }
+    func startFocus(minutes: Int) {
+        stopFocus(quiet: true)
+        focusEnds = Date().addingTimeInterval(Double(minutes) * 60)
+        enter("focus", for: 0); say("Focus: \(minutes) min. Let's go!")
+        let half = Timer(fire: Date().addingTimeInterval(Double(minutes) * 30), interval: 0, repeats: false) { [weak self] _ in
+            guard let self, self.focusActive else { return }
+            self.say("Halfway. Nice."); if self.current.name != "focus" { self.enter("focus", for: 0) }
+        }
+        half.tolerance = 30; RunLoop.main.add(half, forMode: .common)
+        let end = Timer(fire: focusEnds!, interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.focusEnds = nil
+            self.enter("celebrate", for: 3); self.say("Break time! 🎉")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.current.name == "celebrate" { self.chooseNextState() } }
+        }
+        end.tolerance = 15; RunLoop.main.add(end, forMode: .common)
+        focusTimer = end
+    }
+    func stopFocus(quiet: Bool = false) {
+        focusTimer?.invalidate(); focusTimer = nil
+        guard focusEnds != nil else { return }
+        focusEnds = nil
+        if !quiet { say("Focus ended"); chooseNextState() }
+    }
+
+    // MARK: reminders
+    func remind(in minutes: Int, text: String) {
+        let t = Timer(fire: Date().addingTimeInterval(Double(minutes) * 60), interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.react("bark", for: 1.5, say: text.isEmpty ? "Reminder!" : text, force: true)
+            self.view.say(text.isEmpty ? "Reminder!" : text, for: 8)
+        }
+        t.tolerance = 10; RunLoop.main.add(t, forMode: .common)
+        say("Okay! In \(minutes) min.")
+    }
+
+    // MARK: music -> groove
+    private var musicPlaying = false
+    private func reactToMusic(_ note: Notification) {
+        let state = (note.userInfo?["Player State"] as? String) ?? ""
+        let playing = state == "Playing"
+        guard playing != musicPlaying else { return }
+        musicPlaying = playing
+        if playing {
+            let title = (note.userInfo?["Name"] as? String) ?? ""
+            if current.name != "held", !focusActive { enter("groove", for: 0); say(title.isEmpty ? "🎵" : "🎵 \(title)") }
+        } else if current.name == "groove" { chooseNextState() }
+    }
     func bark() { enter("bark", for: 1.0); say(["Bow!", "Bow bow!", "Chimtu!"].randomElement()!) }
     func beg() { enter("beg", for: 2.5); say(["Treat?", "Pleeease", "Em chestunnav?"].randomElement()!) }
     func say(_ text: String) { view.say(text) }
@@ -101,7 +171,7 @@ final class PetController {
 
     private var isNight: Bool { let h = Calendar.current.component(.hour, from: Date()); return h >= 23 || h < 6 }
     private static let idleLines = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
-    func giveTreat() { enter("eat", for: 2.5) }
+    func giveTreat() { stats.treats += 1; enter("eat", for: 2.5) }
     func howl() { enter("howl", for: 2.0) }
     func rollOver() { enter("roll", for: 1.2) }
 
@@ -192,6 +262,7 @@ final class PetController {
     private func reactToKey(_ e: NSEvent) {
         guard isVisible, !isSuspended else { return }
         let now = Date()
+        stats.keys += 1
         keyTimes = keyTimes.filter { now.timeIntervalSince($0) < 3 } + [now]
         if typingSessionStart == nil { typingSessionStart = now; speedCelebrated = false }
         typingStopTimer?.invalidate()
@@ -208,7 +279,7 @@ final class PetController {
         default: break
         }
         // Steady typing (>= 8 keys in the last 3 s): tap along.
-        if keyTimes.count >= 8, current.name != "typing", !gestureActive, current.name != "held" {
+        if keyTimes.count >= 8, current.name != "typing", !gestureActive, !["held", "focus", "groove"].contains(current.name) {
             enter("typing", for: 4); say("tak tak tak")
         } else if current.name == "typing" {
             stateEndsAt = now.addingTimeInterval(3)   // keep tapping while keys keep coming
@@ -394,6 +465,8 @@ final class PetController {
 
     private func chooseNextState() {
         // Waking up always starts with a yawn and stretch.
+        if focusActive { enter("focus", for: 0); return }
+        if musicPlaying { enter("groove", for: 0); return }
         if current.name == "sleep" { enter("yawn", for: 1.5); return }
         if current.name == "sad" { enter("sleep", for: .random(in: 60...180)); return }
         // Nobody around for 5 minutes: get lonely, then nap.
@@ -411,6 +484,7 @@ final class PetController {
         case ..<0.89: enter(["sneeze", "dig", "roll"].randomElement()!, for: 1.2)
         case ..<0.91: if isNight { enter("sleep", for: 120) } else { Bool.random() ? bark() : beg() }
         case ..<0.93: enter("idle", for: 4); say(Self.idleLines.randomElement()!)
+        case ..<0.94: enter("wink", for: 1.0)
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -452,10 +526,11 @@ final class PetController {
         if current.name.hasPrefix("idle"), let variant = idleVariantForCursor(), variant.name != current.name {
             current = variant   // same frame count and rate, so keep the frame index
         }
-        view.show(current.frames[frame])
+        let hatOK = !["roll", "spin", "held", "sneeze", "shake"].contains(current.name)
+        view.show(current.frames[frame], hatVisible: hatOK)
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
@@ -500,6 +575,8 @@ final class PetController {
         watchDownloads()
         startKeyMonitor()
         let dc = DistributedNotificationCenter.default()
+        dc.addObserver(forName: Notification.Name("com.apple.Music.playerInfo"), object: nil, queue: .main) { [weak self] n in self?.reactToMusic(n) }
+        dc.addObserver(forName: Notification.Name("com.spotify.client.PlaybackStateChanged"), object: nil, queue: .main) { [weak self] n in self?.reactToMusic(n) }
         dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             self?.suspend(false); self?.enter("happy", for: 1.5); self?.say("Welcome back!")
@@ -515,10 +592,13 @@ final class PetController {
         }
     }
 
+    static var count = 0
     private func placeAtBottom() {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: vf.midX - Sprites.size.width / 2, y: vf.minY))
+        let x = PetController.count == 0 ? vf.midX - Sprites.size.width / 2 : CGFloat.random(in: vf.minX + 40 ... vf.maxX - Sprites.size.width - 40)
+        PetController.count += 1
+        window.setFrameOrigin(NSPoint(x: x, y: vf.minY))
     }
 }
 

@@ -20,7 +20,7 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
-    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); eat = pose.get("eat", 0); love = pose.get("love", False); howl = pose.get("howl", 0); sneeze = pose.get("sneeze", 0); dig = pose.get("dig", 0); sniff = pose.get("sniff", 0); fetch = pose.get("fetch", False); bark = pose.get("bark", 0); beg = pose.get("beg", False); typing = pose.get("typing", None); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); eat = pose.get("eat", 0); love = pose.get("love", False); howl = pose.get("howl", 0); sneeze = pose.get("sneeze", 0); dig = pose.get("dig", 0); sniff = pose.get("sniff", 0); fetch = pose.get("fetch", False); bark = pose.get("bark", 0); beg = pose.get("beg", False); typing = pose.get("typing", None); groove = pose.get("groove", 0); focus = pose.get("focus", False); wink = pose.get("wink", False); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
@@ -80,7 +80,7 @@ def draw(pose):
             leg(cx+12*s, sw2)
 
     # head: front view, round and wide
-    hx = cx + face*(9*s if run else 4*s)
+    hx = cx + face*(9*s if run else 4*s) + groove*5*s
     hy = by - bry + (5*s if run else 2*s) - howl*6*s + (sneeze if sneeze > 0 else 0)*7*s + dig*6*s + abs(sniff)*8*s + bark*3*s - (4*s if beg else 0)
     hrx, hry = 25*s, 21*s
     # ears
@@ -113,6 +113,10 @@ def draw(pose):
             E(d, ex, ey, 4.6*s, 5*s, BLACK); E(d, ex+1.4*s, ey-1.8*s, 1.8*s, 1.8*s, WHITE); E(d, ex-1.6*s, ey+1.6*s, 0.9*s, 0.9*s, WHITE); continue
         if sniff or typing is not None:
             ey += 1.5*s
+        if groove or (wink and e == 1):
+            d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
+        if focus:
+            E(d, ex, ey+0.5*s, 3.2*s, 3.2*s, BLACK); d.chord([ex-4*s, ey-4.5*s, ex+4*s, ey+1.5*s], 0, 180, fill=ORANGE); continue
         if love or howl or sneeze:
             d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
         if happy:
@@ -168,6 +172,11 @@ def draw(pose):
             ext = (dig if i == 0 else 1-dig)*8*s
             d.rounded_rectangle([cx+lx-5.5*s, by+6*s, cx+lx+5.5*s, base+2*s-ext*0.3], radius=4*s, fill=ORANGE)
             E(d, cx+lx+(-1 if i==0 else 1)*ext*0.4, base-2*s, 7.5*s, 4.5*s, CREAM)
+    if focus:
+        for e in (-1, 1):
+            ex = hx + e*10*s + face*1.5*s
+            d.ellipse([ex-6*s, hy-8*s, ex+6*s, hy+3*s], outline=(60, 50, 70), width=int(1.8*s))
+        d.line([(hx-4*s+face*1.5*s, hy-3*s), (hx+4*s+face*1.5*s, hy-3*s)], fill=(60, 50, 70), width=int(1.6*s))
     if typing is not None:
         # front paws tapping alternately on an invisible keyboard
         for i, e in enumerate((-1, 1)):
@@ -187,6 +196,24 @@ def draw(pose):
 def compress(img):
     """Palette PNG (128 colours) with alpha preserved; ~4-6x smaller than RGBA."""
     return img.quantize(colors=128, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE)
+
+def draw_hat(kind):
+    s = SS*SCALE
+    img = Image.new("RGBA", (W*s, H*s), (0,0,0,0)); d = ImageDraw.Draw(img)
+    base = (H-6)*s; by = base - 22*s; hx = W/2*s; hy = by - 22*s + 2*s   # idle head centre
+    top = hy - 20*s
+    if kind == "party":
+        d.polygon([(hx-11*s, top+2*s), (hx+11*s, top+2*s), (hx, top-24*s)], fill=(120, 90, 230))
+        for y in (top-6*s, top-14*s): d.line([(hx-8*s*(y-top+24*s)/24/s, y), (hx+8*s*(y-top+24*s)/24/s, y)], fill=(255, 220, 90), width=int(2.2*s))
+        E(d, hx, top-24*s, 3.5*s, 3.5*s, (255, 110, 150))
+    elif kind == "cap":
+        d.chord([hx-17*s, top-8*s, hx+17*s, top+14*s], 180, 360, fill=(52, 100, 200))
+        d.rounded_rectangle([hx-2*s, top+1*s, hx+24*s, top+5*s], radius=2*s, fill=(40, 80, 170))
+        E(d, hx, top-8*s, 2.5*s, 2.5*s, (255, 220, 90))
+    elif kind == "crown":
+        d.polygon([(hx-14*s, top+2*s), (hx+14*s, top+2*s), (hx+14*s, top-10*s), (hx+7*s, top-3*s), (hx, top-14*s), (hx-7*s, top-3*s), (hx-14*s, top-10*s)], fill=(250, 200, 60))
+        for x in (-14, 0, 14): E(d, hx+x*s, top-(10 if x else 14)*s, 2.2*s, 2.2*s, (230, 60, 90))
+    return img.resize((W*SCALE, H*SCALE), Image.LANCZOS)
 
 def save(name, frames):
     os.makedirs(OUT, exist_ok=True)
@@ -229,11 +256,16 @@ sniff = [draw({"sniff":v,"tongue":False,"wag":w}) for v,w in [(-1,1),(1,-1),(-1,
 fetch = [draw({"fetch":True,"tongue":False,"bob":b,"wag":w,"happy":True}) for b,w in [(0,-3),(1.5,3),(3,-3),(1.5,3),(0,-3),(1,3)]]
 bark = [draw(p) for p in [{"bark":1.0,"tongue":False,"squash":1.05,"bob":2},{"bark":0.3,"tongue":False,"squash":0.97},{"bark":1.0,"tongue":False,"squash":1.05,"bob":2},{"bark":0.3,"tongue":False,"squash":0.97},{"bark":0.6,"tongue":False},{"tongue":True,"wag":2}]]
 beg = [draw({"beg":True,"sit":True,"tongue":True,"bob":b,"wag":w}) for b,w in [(0,-2),(0.5,2),(1,-2),(0.5,2),(0,-2),(0,2)]]
+groove = [draw({"groove":g,"bob":b,"wag":w,"squash":q,"tongue":True}) for g,b,w,q in [(-1,0,-3,0.97),(-0.5,2,3,1.02),(0,3,-3,1.04),(0.5,2,3,1.02),(1,0,-3,0.97),(0.5,1,3,1.0)]]
+focus = [draw({"focus":True,"sit":True,"tongue":False,"bob":b,"blink":bl}) for b,bl in [(0,False),(0.3,False),(0.6,False),(0.3,False),(0,False),(0,True)]]
+wink = [draw({"wink":True,"tongue":True,"bob":b,"wag":w}) for b,w in [(0,0),(1,2),(1,2),(0,0)]]
+celebrate = [draw({"happy":True,"air":a,"squash":q,"wag":w,"face":f}) for a,q,w,f in [(0,0.9,3,0),(14,1.06,-3,-1),(22,1.0,3,0),(14,1.06,-3,1),(0,0.9,3,0),(6,1.02,-3,0)]]
 typing = [draw({"typing":v,"sit":True,"tongue":True,"bob":b}) for v,b in [(0,0),(1,0.5),(0,0),(1,0.5),(0.5,0),(0.5,0.5)]]
-for n,f in [("held",held),("land",land),("eat",eat),("typing",typing),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing)]: save(n,f)
+for n,f in [("held",held),("land",land),("eat",eat),("typing",typing),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate)]: save(n,f)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing)]
+for kind in ("party", "cap", "crown"): compress(draw_hat(kind)).save(f"{OUT}/hat_{kind}.png", optimize=True)
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)

@@ -26,6 +26,7 @@ final class PetWindow: NSWindow {
 
 final class PetView: NSView {
     let sprite = CALayer()
+    let hat = CALayer()
     private let bubble = CALayer()
     private let bubbleText = CATextLayer()
     private var bubbleTimer: Timer?
@@ -45,6 +46,8 @@ final class PetView: NSView {
         sprite.magnificationFilter = .linear
         sprite.contentsScale = 2
         layer?.addSublayer(sprite)
+        hat.frame = sprite.frame; hat.contentsGravity = .resizeAspect; hat.contentsScale = 2; hat.isHidden = true
+        layer?.addSublayer(hat)
 
         bubble.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.96).cgColor
         bubble.borderColor = NSColor(calibratedRed: 0.87, green: 0.59, blue: 0.32, alpha: 1).cgColor
@@ -85,6 +88,7 @@ final class PetView: NSView {
     func apply(scale: CGFloat) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         sprite.frame = CGRect(origin: .zero, size: CGSize(width: Sprites.size.width * scale, height: Sprites.size.height * scale))
+        hat.frame = sprite.frame
         CATransaction.commit()
     }
 
@@ -98,10 +102,16 @@ final class PetView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    func show(_ image: CGImage) {
+    func show(_ image: CGImage, hatVisible: Bool = true) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)   // no implicit fade animations
         sprite.contents = image
+        hat.isHidden = hat.contents == nil || !hatVisible
+        CATransaction.commit()
+    }
+    func setHat(_ image: CGImage?) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hat.contents = image; hat.isHidden = image == nil
         CATransaction.commit()
     }
 

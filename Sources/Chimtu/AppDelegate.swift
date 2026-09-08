@@ -8,6 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var loginItem: NSMenuItem!
     private var followItem: NSMenuItem!
     private var typingItem: NSMenuItem!
+    private var friends: [PetController] = []
+    private var focusItem: NSMenuItem!
+    private var animations: [String: Animation] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let animations = Sprites.load()
@@ -15,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let alert = NSAlert(); alert.messageText = "Chimtu could not find its sprite frames."; alert.runModal()
             NSApp.terminate(nil); return
         }
+        self.animations = animations
         pet = PetController(animations: animations)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -28,6 +32,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Roll Over", #selector(doRoll)), ("Howl", #selector(doHowl)), ("Give Treat", #selector(doTreat)), ("Bark", #selector(doBark)), ("Beg", #selector(doBeg)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
+        menu.addItem(.separator())
+        focusItem = NSMenuItem(title: "Start Focus (25 min)", action: #selector(toggleFocus), keyEquivalent: ""); focusItem.target = self
+        menu.addItem(focusItem)
+        let remindMenu = NSMenu()
+        for m in [5, 10, 30, 60] {
+            let it = NSMenuItem(title: "In \(m) minutes…", action: #selector(remind(_:)), keyEquivalent: ""); it.target = self; it.tag = m; remindMenu.addItem(it)
+        }
+        let remindItem = NSMenuItem(title: "Remind Me", action: nil, keyEquivalent: ""); remindItem.submenu = remindMenu; menu.addItem(remindItem)
+        let dayItem = NSMenuItem(title: "How's your day?", action: #selector(howsYourDay), keyEquivalent: ""); dayItem.target = self; menu.addItem(dayItem)
+        let hatMenu = NSMenu()
+        for (title, key) in [("None", "none"), ("Party Hat", "party"), ("Cap", "cap"), ("Crown", "crown")] {
+            let it = NSMenuItem(title: title, action: #selector(setHat(_:)), keyEquivalent: ""); it.target = self; it.representedObject = key
+            it.state = pet.hatName == key ? .on : .off; hatMenu.addItem(it)
+        }
+        let hatItem = NSMenuItem(title: "Hat", action: nil, keyEquivalent: ""); hatItem.submenu = hatMenu; menu.addItem(hatItem)
+        let friendItem = NSMenuItem(title: "Add a Friend", action: #selector(addFriend), keyEquivalent: ""); friendItem.target = self; menu.addItem(friendItem)
         menu.addItem(.separator())
         let sizeMenu = NSMenu()
         for (title, pct) in [("Small", 70), ("Normal", 100), ("Large", 140), ("Huge", 200)] {
@@ -79,6 +99,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func toggleFocus() {
+        if pet.focusActive { pet.stopFocus(); focusItem.title = "Start Focus (25 min)" }
+        else { pet.startFocus(minutes: 25); focusItem.title = "Stop Focus" ; scheduleFocusTitleReset(after: 25 * 60 + 5) }
+    }
+    private func scheduleFocusTitleReset(after s: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + s) { [weak self] in if self?.pet.focusActive == false { self?.focusItem.title = "Start Focus (25 min)" } }
+    }
+    @objc private func remind(_ sender: NSMenuItem) {
+        let a = NSAlert(); a.messageText = "Remind you about what?"; a.informativeText = "Chimtu will bark and show it in \(sender.tag) minutes."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24)); field.placeholderString = "Drink water"
+        a.accessoryView = field; a.addButton(withTitle: "Set"); a.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if a.runModal() == .alertFirstButtonReturn { pet.remind(in: sender.tag, text: field.stringValue) }
+    }
+    @objc private func howsYourDay() { pet.howIsYourDay() }
+    @objc private func setHat(_ sender: NSMenuItem) {
+        pet.setHat(sender.representedObject as? String ?? "none")
+        sender.menu?.items.forEach { $0.state = $0 == sender ? .on : .off }
+    }
+    @objc private func addFriend() {
+        guard friends.count < 4 else { pet.say("That's enough friends!"); return }
+        let friend = PetController(animations: animations)
+        friends.append(friend)
+        friend.say(["Hi!", "Bow!", "Namaste!"].randomElement()!)
+    }
+
     @objc private func doJump() { pet.jump() }
     @objc private func doDance() { pet.dance() }
     @objc private func doSpin() { pet.spin() }
@@ -109,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggle() {
         pet.setVisible(!pet.isVisible)
+        friends.forEach { $0.setVisible(pet.isVisible) }
         toggleItem.title = pet.isVisible ? "Hide Chimtu" : "Show Chimtu"
     }
 }
