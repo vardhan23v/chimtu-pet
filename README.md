@@ -1,5 +1,7 @@
 # Chimtu — a macOS desktop pet
 
+![build](https://github.com/vardhan23v/chimtu/actions/workflows/release.yml/badge.svg)
+
 Chimtu is the Telugu-meme Cheems Shiba, living at the bottom of your screen.
 He idles, sits, naps, wanders a little, scratches an ear, and yawns when he
 wakes up. His eyes follow your cursor. Click him to wave or wiggle, double-click to jump.
@@ -9,7 +11,13 @@ lonely and naps. On low battery he looks tired. Now and then he dances, spins, o
 Menu-bar icon 🐕: Hide/Show, Jump, Dance, Spin, Shake, Sit Down, Go to Sleep, Follow Cursor, Launch at Login, Quit.
 Follow Cursor makes him trot after your mouse anywhere on screen and wait beside it.
 
-## Build & run
+## Install (no build needed)
+
+1. Download `Chimtu.zip` from the [latest release](https://github.com/vardhan23v/chimtu/releases/latest).
+2. Unzip and drag `Chimtu.app` into `/Applications`.
+3. First launch: right-click the app and choose **Open** (it is not notarized), then look for 🐕 in the menu bar.
+
+## Build from source
 
 ```sh
 ./build.sh          # needs only the Swift toolchain (Command Line Tools)
@@ -30,3 +38,7 @@ open dist/Chimtu.app
 
 `tools/render_sprites.py` draws every frame procedurally (Pillow). Re-run it and
 `./build.sh` to change the look. `Resources/contact-sheet.png` previews all states.
+
+## License
+
+MIT

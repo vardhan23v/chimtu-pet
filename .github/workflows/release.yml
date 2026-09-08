@@ -1,0 +1,31 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pillow (sprite renderer)
+        run: python3 -m pip install --quiet pillow
+      - name: Build Chimtu.app
+        run: |
+          sed -i '' 's|/usr/bin/python3|python3|' build.sh
+          ./build.sh
+      - name: Zip
+        run: cd dist && zip -qry ../Chimtu.zip Chimtu.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Chimtu
+          path: Chimtu.zip
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Chimtu.zip
+          generate_release_notes: true
