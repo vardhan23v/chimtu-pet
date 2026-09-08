@@ -24,9 +24,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
         menu.addItem(.separator())
-        for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Roll Over", #selector(doRoll)), ("Howl", #selector(doHowl)), ("Give Treat", #selector(doTreat)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
+        for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Roll Over", #selector(doRoll)), ("Howl", #selector(doHowl)), ("Give Treat", #selector(doTreat)), ("Bark", #selector(doBark)), ("Beg", #selector(doBeg)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
+        menu.addItem(.separator())
+        let sizeMenu = NSMenu()
+        for (title, pct) in [("Small", 70), ("Normal", 100), ("Large", 140), ("Huge", 200)] {
+            let it = NSMenuItem(title: title, action: #selector(setSize(_:)), keyEquivalent: ""); it.target = self; it.tag = pct
+            it.state = Int(pet.scale * 100) == pct ? .on : .off
+            sizeMenu.addItem(it)
+        }
+        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: ""); sizeItem.submenu = sizeMenu
+        menu.addItem(sizeItem)
         menu.addItem(.separator())
         followItem = NSMenuItem(title: "Follow Cursor", action: #selector(toggleFollow), keyEquivalent: "f")
         followItem.target = self
@@ -37,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Press and hold: pet him", action: nil, keyEquivalent: "")
+        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Hold: pet him · Drop a file: fetch", action: nil, keyEquivalent: "")
         about.isEnabled = false
         menu.addItem(about)
         menu.addItem(.separator())
@@ -57,6 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func doRoll() { pet.rollOver() }
     @objc private func doHowl() { pet.howl() }
     @objc private func doTreat() { pet.giveTreat() }
+    @objc private func doBark() { pet.bark() }
+    @objc private func doBeg() { pet.beg() }
+    @objc private func setSize(_ sender: NSMenuItem) {
+        pet.apply(scale: CGFloat(sender.tag) / 100)
+        sender.menu?.items.forEach { $0.state = $0 == sender ? .on : .off }
+    }
     @objc private func doSit() { pet.sitDown() }
     @objc private func doSleep() { pet.goToSleep() }
 

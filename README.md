@@ -45,8 +45,11 @@ the frames.
 ## Features
 
 - Idle, sit, sleep, walk, run, scratch, yawn, wave, jump, dance, spin, shake,
-  roll over, dig, sneeze, howl, eat, love, alert, happy, sad, and tired
-  animations.
+  roll over, dig, sneeze, howl, eat, love, sniff, fetch, bark, beg, alert,
+  happy, sad, and tired animations.
+- Speech bubbles with short Telugu-meme lines, greetings, and the hourly time.
+- Copy something and he sniffs it. Drop a file on him and he fetches it (opens it).
+- Size menu: Small, Normal, Large, Huge. Sleeps longer between 11 pm and 6 am.
 - Press and hold on Chimtu to pet him; he blushes.
 - Howls on the hour (unless he is asleep). "Give Treat" makes him munch.
 - Cursor-aware idle poses: Chimtu looks toward the mouse.
@@ -66,7 +69,8 @@ Click Chimtu's 🐕 menu-bar icon to use:
 | Action | What it does |
 | --- | --- |
 | Hide Chimtu / Show Chimtu | Toggle the pet window |
-| Jump, Dance, Spin, Shake, Roll Over, Howl, Give Treat | Trigger an animation immediately |
+| Jump, Dance, Spin, Shake, Roll Over, Howl, Give Treat, Bark, Beg | Trigger an animation immediately |
+| Size | Small / Normal / Large / Huge |
 | Sit Down | Keep Chimtu seated for a while |
 | Go to Sleep | Put Chimtu to sleep |
 | Follow Cursor | Have Chimtu move toward and wait beside the pointer |

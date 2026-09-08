@@ -9,7 +9,10 @@ struct Animation {
 }
 
 enum Sprites {
+    /// Sprite cell size in points; the window adds headroom above for the speech bubble.
     static let size = CGSize(width: 112, height: 96)
+    static let bubbleHeight: CGFloat = 34
+    static var windowSize: CGSize { CGSize(width: size.width, height: size.height + bubbleHeight) }
 
     static func load() -> [String: Animation] {
         let specs: [(String, Int, Double)] = [
@@ -19,6 +22,7 @@ enum Sprites {
             ("jump", 6, 10), ("scratch", 6, 6), ("yawn", 6, 4), ("alert", 6, 6), ("happy", 6, 8),
             ("held", 4, 4), ("land", 4, 10), ("spin", 6, 7), ("dance", 6, 8), ("shake", 6, 12), ("sad", 6, 3), ("tired", 6, 3),
             ("eat", 6, 6), ("love", 6, 6), ("howl", 6, 5), ("sneeze", 6, 8), ("dig", 6, 8), ("roll", 6, 6),
+            ("sniff", 6, 8), ("fetch", 6, 6), ("bark", 6, 8), ("beg", 6, 4),
         ]
         var out: [String: Animation] = [:]
         for (name, count, fps) in specs {

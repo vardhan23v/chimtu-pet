@@ -23,11 +23,13 @@ SPECS = {  # name: (frames, fps)
     "sit": (4, 3), "sleep": (2, 1), "wave": (4, 6), "jump": (6, 10), "scratch": (6, 6), "yawn": (6, 4),
     "alert": (6, 6), "happy": (6, 8), "held": (4, 4), "land": (4, 10), "spin": (6, 7), "dance": (6, 8),
     "shake": (6, 12), "sad": (6, 3), "tired": (6, 3), "eat": (6, 6), "love": (6, 6), "howl": (6, 5),
-    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6),
+    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4),
 }
 GESTURES = {"wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin",
-            "shake", "eat", "love", "howl", "sneeze", "dig", "roll"}
-W, H = 224, 192
+            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg"}
+W, H = 224, 192 + 40   # 40 px headroom for the speech bubble
+SPRITE_Y = 40
+IDLE_LINES = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
 
 class Chimtu:
     def __init__(self):
@@ -42,7 +44,11 @@ class Chimtu:
             except tk.TclError: pass
         self.canvas = tk.Canvas(self.root, width=W, height=H, bg=KEY, highlightthickness=0, bd=0)
         self.canvas.pack()
-        self.item = self.canvas.create_image(0, 0, anchor="nw")
+        self.item = self.canvas.create_image(0, SPRITE_Y, anchor="nw")
+        self.bubble_bg = self.canvas.create_rectangle(0, 0, 0, 0, fill="white", outline="#de9652", width=2, state="hidden")
+        self.bubble_tx = self.canvas.create_text(0, 0, text="", font=("Segoe UI", 10, "bold"), fill="#4d3320", state="hidden")
+        self.bubble_after = None
+        self.clip = self.clipboard()
 
         d = resource_dir()
         self.anim = {}
@@ -72,6 +78,19 @@ class Chimtu:
 
     # ---------- helpers
     def mouse(self): return self.root.winfo_pointerxy()
+    def clipboard(self):
+        try: return self.root.clipboard_get()
+        except tk.TclError: return None
+    def say(self, text, seconds=2.5):
+        c = self.canvas
+        c.itemconfig(self.bubble_tx, text=text, state="normal")
+        x0, y0, x1, y1 = c.bbox(self.bubble_tx)
+        w = min(max(x1 - x0 + 18, 40), W)
+        c.coords(self.bubble_bg, (W - w) / 2, 6, (W + w) / 2, 32); c.coords(self.bubble_tx, W / 2, 19)
+        c.itemconfig(self.bubble_bg, state="normal"); c.tag_raise(self.bubble_bg); c.tag_raise(self.bubble_tx)
+        if self.bubble_after: self.root.after_cancel(self.bubble_after)
+        self.bubble_after = self.root.after(int(seconds * 1000), lambda: [c.itemconfig(i, state="hidden") for i in (self.bubble_bg, self.bubble_tx)])
+    def is_night(self): h = time.localtime().tm_hour; return h >= 23 or h < 6
     def place(self): self.root.geometry(f"{W}x{H}+{int(self.x)}+{int(self.y)}")
     def foreground(self):
         if not IS_WIN: return None
@@ -105,12 +124,17 @@ class Chimtu:
         r = random.random()
         if r < 0.40: self.enter("tired" if self.battery_low() else "idle", random.uniform(5, 12))
         elif r < 0.62: self.enter("sit", random.uniform(6, 15))
-        elif r < 0.74: self.enter("sleep", random.uniform(15, 40))
+        elif r < 0.74: self.enter("sleep", random.uniform(90, 240) if self.is_night() else random.uniform(15, 40))
         elif r < 0.80: self.enter("scratch", 1.5)
         elif r < 0.83: self.enter("jump", 0.6)
         elif r < 0.85: self.enter("dance", 2.5)
         elif r < 0.87: self.enter(random.choice(["spin", "shake"]), 0.9)
         elif r < 0.89: self.enter(random.choice(["sneeze", "dig", "roll"]), 1.2)
+        elif r < 0.91:
+            if self.is_night(): self.enter("sleep", 120)
+            elif random.random() < 0.5: self.enter("bark", 1.0); self.say(random.choice(["Bow!", "Bow bow!", "Chimtu!"]))
+            else: self.enter("beg", 2.5); self.say(random.choice(["Treat?", "Pleeease", "Em chestunnav?"]))
+        elif r < 0.93: self.enter("idle", 4); self.say(random.choice(IDLE_LINES))
         else:
             sw = self.root.winfo_screenwidth()
             self.walk_dir = random.choice([1, -1])
@@ -122,6 +146,11 @@ class Chimtu:
         self.after_id = None
         mx, my = self.mouse()
         if (mx, my) != self.last_mouse: self.last_mouse = (mx, my); self.last_move = time.time()
+        clip = self.clipboard()
+        if clip != self.clip:
+            self.clip = clip
+            if self.state != "sleep" and not (self.state in GESTURES and time.time() < self.ends) and not self.dragging:
+                self.state, self.frame, self.ends = "sniff", 0, time.time() + 1.2; self.say("sniff sniff")
         fg = self.foreground()
         if fg != self.fg_window:
             self.fg_window = fg
@@ -145,7 +174,7 @@ class Chimtu:
 
     # ---------- follow cursor
     def follow_tick(self, mx, my):
-        dx, dy = mx - (self.x + W / 2), my - (self.y + H / 2)
+        dx, dy = mx - (self.x + W / 2), my - (self.y + SPRITE_Y + 96)
         if abs(dx) < 50 and abs(dy) < 60:
             self.stop_mover()
             if not self.state.startswith("idle"): self.state, self.frame, self.ends = "idle", 0, float("inf")
@@ -185,7 +214,7 @@ class Chimtu:
     def on_release(self, e):
         if self.dragging:
             self.dragging = False; self.enter("land", 0.45); return
-        if time.time() - self.press_t > 0.5: return self.enter("love", 2.0)
+        if time.time() - self.press_t > 0.5: self.say(random.choice(["❤", "Good boy vibes", "Chimtuuu"])); return self.enter("love", 2.0)
         self.click_count += 1
         self.enter("happy" if self.click_count % 2 == 0 else "wave", 1.2)
 
@@ -196,7 +225,7 @@ class Chimtu:
         m.add_checkbutton(label="Follow Cursor", variable=self.follow_var, command=self.toggle_follow)
         m.add_separator()
         for label, st, secs in [("Jump", "jump", 0.6), ("Dance", "dance", 2.5), ("Spin", "spin", 0.9), ("Shake", "shake", 0.6),
-                                ("Roll Over", "roll", 1.2), ("Howl", "howl", 2.0), ("Give Treat", "eat", 2.5),
+                                ("Roll Over", "roll", 1.2), ("Howl", "howl", 2.0), ("Give Treat", "eat", 2.5), ("Bark", "bark", 1.0), ("Beg", "beg", 2.5),
                                 ("Sit Down", "sit", 15), ("Go to Sleep", "sleep", 60)]:
             m.add_command(label=label, command=lambda s=st, t=secs: self.enter(s, t))
         m.add_separator()
@@ -210,7 +239,7 @@ class Chimtu:
         if self.follow: self.enter("idle", 0)
         else: self.stop_mover(); self.next_state()
     def hourly(self):
-        if self.state != "sleep": self.enter("howl", 2.0)
+        if self.state != "sleep": self.enter("howl", 2.0); self.say(time.strftime("Awooo, it's %I %p").replace(" 0", " "))
         self.root.after(60 * 60 * 1000, self.hourly)
 
     def run(self): self.root.mainloop()

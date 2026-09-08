@@ -27,7 +27,7 @@ final class PetController {
     init(animations: [String: Animation]) {
         self.animations = animations
         self.current = animations["idle"]!
-        window = PetWindow(size: Sprites.size)
+        window = PetWindow(size: Sprites.windowSize)
         placeAtBottom()
         view.onClick = { [weak self] in
             guard let self else { return }
@@ -35,7 +35,10 @@ final class PetController {
             self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
         }
         view.onDoubleClick = { [weak self] in self?.jump() }
-        view.onLongPress = { [weak self] in self?.enter("love", for: 2.0) }
+        view.onLongPress = { [weak self] in self?.enter("love", for: 2.0); self?.say(["❤️", "Good boy vibes", "Chimtuuu"].randomElement()!) }
+        view.onFileDrop = { [weak self] urls in self?.fetch(urls) }
+        apply(scale: UserDefaults.standard.double(forKey: "petScale").nonZeroOr(1))
+        clipboardCount = NSPasteboard.general.changeCount
         scheduleHourlyHowl()
         window.onDragStart = { [weak self] in
             guard let self, !self.programmaticMove else { return }
@@ -59,6 +62,44 @@ final class PetController {
     private var lastMouseMove = Date()
 
     func dance() { enter("dance", for: 2.5) }
+    func bark() { enter("bark", for: 1.0); say(["Bow!", "Bow bow!", "Chimtu!"].randomElement()!) }
+    func beg() { enter("beg", for: 2.5); say(["Treat?", "Pleeease", "Em chestunnav?"].randomElement()!) }
+    func say(_ text: String) { view.say(text) }
+
+    // MARK: size
+    private(set) var scale: CGFloat = 1
+    func apply(scale newScale: CGFloat) {
+        scale = newScale
+        UserDefaults.standard.set(Double(newScale), forKey: "petScale")
+        var f = window.frame
+        let newSize = CGSize(width: Sprites.windowSize.width * newScale, height: Sprites.windowSize.height * newScale)
+        f.origin.x += (f.width - newSize.width) / 2   // keep the pet centred on its old spot
+        f.size = newSize
+        window.setFrame(f, display: true)
+        view.apply(scale: newScale)
+    }
+
+    // MARK: clipboard sniffing
+    private var clipboardCount = 0
+    private func checkClipboard() {
+        let c = NSPasteboard.general.changeCount
+        guard c != clipboardCount else { return }
+        clipboardCount = c
+        guard current.name != "sleep", !(gestureActive) else { return }
+        enter("sniff", for: 1.2); say("sniff sniff")
+    }
+    private var gestureActive: Bool { ["jump","wave","happy","eat","love","howl","roll","held","fetch","bark","beg","sniff"].contains(current.name) && Date() < stateEndsAt }
+
+    // MARK: fetch dropped files
+    private func fetch(_ urls: [URL]) {
+        guard let url = urls.first else { return }
+        enter("fetch", for: 2.0)
+        say("Fetched \(url.lastPathComponent)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { NSWorkspace.shared.open(url) }
+    }
+
+    private var isNight: Bool { let h = Calendar.current.component(.hour, from: Date()); return h >= 23 || h < 6 }
+    private static let idleLines = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
     func giveTreat() { enter("eat", for: 2.5) }
     func howl() { enter("howl", for: 2.0) }
     func rollOver() { enter("roll", for: 1.2) }
@@ -71,7 +112,10 @@ final class PetController {
         guard let next = cal.nextDate(after: Date(), matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) else { return }
         let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
             guard let self else { return }
-            if self.isVisible, !self.isSuspended, self.current.name != "sleep" { self.howl() }
+            if self.isVisible, !self.isSuspended, self.current.name != "sleep" {
+                self.howl()
+                let f = DateFormatter(); f.dateFormat = "h a"; self.say("Awooo, it's \(f.string(from: Date()))")
+            }
             self.scheduleHourlyHowl()
         }
         t.tolerance = 60
@@ -198,12 +242,14 @@ final class PetController {
         switch roll {
         case ..<0.40: enter(batteryIsLow ? "tired" : "idle", for: .random(in: 5...12))
         case ..<0.62: enter("sit", for: .random(in: 6...15))
-        case ..<0.74: enter("sleep", for: .random(in: 15...40))
+        case ..<0.74: enter("sleep", for: isNight ? .random(in: 90...240) : .random(in: 15...40))
         case ..<0.80: enter("scratch", for: 1.5)
         case ..<0.83: enter("jump", for: 0.6)
         case ..<0.85: enter("dance", for: 2.5)
         case ..<0.87: enter(Bool.random() ? "spin" : "shake", for: 0.9)
         case ..<0.89: enter(["sneeze", "dig", "roll"].randomElement()!, for: 1.2)
+        case ..<0.91: if isNight { enter("sleep", for: 120) } else { Bool.random() ? bark() : beg() }
+        case ..<0.93: enter("idle", for: 4); say(Self.idleLines.randomElement()!)
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -240,13 +286,14 @@ final class PetController {
 
     private func tick() {
         noteMouseActivity()
+        checkClipboard()
         if current.name.hasPrefix("idle"), let variant = idleVariantForCursor(), variant.name != current.name {
             current = variant   // same frame count and rate, so keep the frame index
         }
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
@@ -282,7 +329,7 @@ final class PetController {
         let dc = DistributedNotificationCenter.default()
         dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            self?.suspend(false); self?.enter("happy", for: 1.5)   // welcome back
+            self?.suspend(false); self?.enter("happy", for: 1.5); self?.say("Welcome back!")
         }
         NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in self?.restartTimer() }
     }
@@ -292,4 +339,9 @@ final class PetController {
         let vf = screen.visibleFrame
         window.setFrameOrigin(NSPoint(x: vf.midX - Sprites.size.width / 2, y: vf.minY))
     }
+}
+
+
+private extension Double {
+    func nonZeroOr(_ fallback: Double) -> CGFloat { self == 0 ? CGFloat(fallback) : CGFloat(self) }
 }
