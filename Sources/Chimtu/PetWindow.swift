@@ -28,6 +28,9 @@ final class PetView: NSView {
     let sprite = CALayer()
     var onClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+    var onLongPress: (() -> Void)?
+    private var pressStart = Date.distantPast
+    private var pressOrigin = NSPoint.zero
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -48,7 +51,13 @@ final class PetView: NSView {
         CATransaction.commit()
     }
 
+    override func mouseDown(with event: NSEvent) {
+        pressStart = Date(); pressOrigin = window?.frame.origin ?? .zero
+        super.mouseDown(with: event)   // keeps window-background dragging working
+    }
     override func mouseUp(with event: NSEvent) {
+        let moved = (window?.frame.origin ?? .zero) != pressOrigin
+        if !moved && Date().timeIntervalSince(pressStart) > 0.5 { onLongPress?(); return }   // petting
         if event.clickCount == 2 { onDoubleClick?() }
         else if event.clickCount == 1 { onClick?() }
     }

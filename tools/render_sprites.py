@@ -20,7 +20,7 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
-    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); eat = pose.get("eat", 0); love = pose.get("love", False); howl = pose.get("howl", 0); sneeze = pose.get("sneeze", 0); dig = pose.get("dig", 0); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
@@ -81,7 +81,7 @@ def draw(pose):
 
     # head: front view, round and wide
     hx = cx + face*(9*s if run else 4*s)
-    hy = by - bry + (5*s if run else 2*s)
+    hy = by - bry + (5*s if run else 2*s) - howl*6*s + (sneeze if sneeze > 0 else 0)*7*s + dig*6*s
     hrx, hry = 25*s, 21*s
     # ears
     for e in (-1, 1):
@@ -91,6 +91,8 @@ def draw(pose):
         if alert: tipx, tipy = (e*1*s, -35*s)             # ears straight up
         if sad: tipx, tipy = (e*14*s, -14*s)              # drooping outward
         if shake: tipx, tipy = (e*4*s + shake*8*s, -26*s) # flapping side to side
+        if howl: tipx, tipy = (e*10*s, -20*s - 4*s*(1-howl))  # laid back while howling
+        if sneeze > 0: tipx, tipy = (e*11*s, -18*s)          # flattened by the sneeze
         if scratch and e == 1: tipx, tipy = e*8*s, -22*s
         d.polygon([(ex-8*s, hy-10*s), (ex+8*s, hy-10*s), (ex+tipx, hy+tipy)], fill=ORANGE)
         d.polygon([(ex-4.5*s, hy-12*s), (ex+4.5*s, hy-12*s), (ex+tipx*0.5, hy+tipy*0.82)], fill=PINK)
@@ -106,6 +108,8 @@ def draw(pose):
         ex, ey = hx+e*10*s+face*2*s+look*2.2*s, hy-2*s
         if yawn or (scratch and e == 1):
             d.arc([ex-3.5*s, ey-2*s, ex+3.5*s, ey+3*s], 200, 340, fill=BLACK, width=int(2*s)); continue
+        if love or howl or sneeze:
+            d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
         if happy:
             d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
         if alert or held:
@@ -125,13 +129,31 @@ def draw(pose):
     d.line([(nx, ny+2.5*s), (nx, ny+6*s)], fill=NOSE, width=int(1.3*s))
     d.arc([nx-7*s, ny+2*s, nx-0.5*s, ny+9*s], 0, 120, fill=NOSE, width=int(1.3*s))
     d.arc([nx+0.5*s, ny+2*s, nx+7*s, ny+9*s], 60, 180, fill=NOSE, width=int(1.3*s))
-    if sad:
+    if howl or sneeze > 0:
+        r = 4.5*s*max(howl, sneeze)
+        E(d, nx, ny+9*s, r*0.8+1*s, r+1*s, BLACK)
+    elif sneeze < 0:
+        d.line([(nx-4*s, ny+8*s), (nx+4*s, ny+8*s)], fill=NOSE, width=int(1.6*s))   # pre-sneeze "ah" grimace
+    elif eat:
+        if eat > 0.5:
+            E(d, nx, ny+9*s, 3.5*s, 3*s, BLACK)
+        else:
+            d.line([(nx-4*s, ny+9*s), (nx+4*s, ny+9*s)], fill=NOSE, width=int(1.6*s))
+        E(d, hx+14*s, hy+9*s, 15*s*(0.6+0.4*(1-eat)), 12*s, CREAM)   # puffed cheek
+    elif sad:
         pass  # keep the neutral mouth; drooping ears + brows carry the emotion
     elif held:
         E(d, nx, ny+9*s, 2.6*s, 3*s, BLACK)
     elif yawn:
         E(d, nx, ny+9*s, 5*s, 4.5*s*yawn+1*s, BLACK); E(d, nx, ny+11*s, 3*s, 2*s*yawn, PINK)
     elif tongue: E(d, nx, ny+10*s, 3.5*s, 3.5*s, PINK)
+    if love:
+        for e in (-1, 1): E(d, hx+e*17*s, hy+7*s, 5*s, 3*s, (245, 150, 150))
+    if dig:
+        for i, lx in enumerate((-12*s, 12*s)):
+            ext = (dig if i == 0 else 1-dig)*8*s
+            d.rounded_rectangle([cx+lx-5.5*s, by+6*s, cx+lx+5.5*s, base+2*s-ext*0.3], radius=4*s, fill=ORANGE)
+            E(d, cx+lx+(-1 if i==0 else 1)*ext*0.4, base-2*s, 7.5*s, 4.5*s, CREAM)
     if scratch:
         # hind leg raised up to the ear, mid-scratch
         lx, ly = hx+22*s, hy-2*s-scratch*4*s
@@ -171,10 +193,18 @@ dance = [draw({"face":f,"air":a,"squash":q,"happy":True,"wag":w}) for f,a,q,w in
 shake = [draw({"shake":v,"face":f,"tongue":False,"blink":True}) for v,f in [(-1,-1),(1,1),(-1,-1),(1,1),(0,0),(0,0)]]
 sad = [draw({"sad":True,"tongue":False,"bob":b}) for b in (0,0.4,0.8,0.4,0,0)]
 tired = [draw({"tired":True,"tongue":False,"bob":b,"blink":bl}) for b,bl in [(0,False),(0.3,False),(0.6,False),(0.3,False),(0,True),(0,True)]]
-for n,f in [("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired)]: save(n,f)
+eat = [draw({"eat":v,"tongue":False,"wag":w}) for v,w in [(1.0,-2),(0.3,2),(1.0,-2),(0.3,2),(0.8,-2),(0.1,2)]]
+love = [draw({"love":True,"tongue":True,"bob":b,"wag":w,"squash":q}) for b,w,q in [(0,-3,1.0),(1,3,1.02),(2,-3,1.03),(1,3,1.02),(0,-3,1.0),(1,3,1.01)]]
+howl = [draw({"howl":v,"tongue":False,"squash":q}) for v,q in [(0.3,1.0),(0.7,1.03),(1.0,1.05),(1.0,1.05),(1.0,1.05),(0.5,1.02)]]
+sneeze = [draw(p) for p in [{"sneeze":-1,"tongue":False,"squash":1.04},{"sneeze":-1,"tongue":False,"squash":1.06},{"sneeze":1,"tongue":False,"squash":0.86,"shake":-1},{"sneeze":0.6,"tongue":False,"squash":0.92},{"tongue":False,"blink":True},{}]]
+dig = [draw({"dig":v,"tongue":True,"squash":0.96}) for v in (0.0,0.5,1.0,0.5,0.0,0.5)]
+_lie = draw({"lie":True,"tongue":True,"wag":1})
+_lieback = _lie.transpose(Image.FLIP_TOP_BOTTOM)
+roll = [draw({"sit":True,"tongue":True}), _lie, walk_r[0].transpose(Image.ROTATE_90), _lieback, walk_l[0].transpose(Image.ROTATE_270), draw({"happy":True,"bob":2,"wag":3})]
+for n,f in [("held",held),("land",land),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll)]: save(n,f)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired)]
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)

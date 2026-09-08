@@ -30,7 +30,10 @@ while using about 0.1% CPU.
 ## Features
 
 - Idle, sit, sleep, walk, run, scratch, yawn, wave, jump, dance, spin, shake,
-  alert, happy, sad, and tired animations.
+  roll over, dig, sneeze, howl, eat, love, alert, happy, sad, and tired
+  animations.
+- Press and hold on Chimtu to pet him; he blushes.
+- Howls on the hour (unless he is asleep). "Give Treat" makes him munch.
 - Cursor-aware idle poses: Chimtu looks toward the mouse.
 - Click to alternate between a wave and a happy wiggle; double-click to jump.
 - Drag Chimtu to pick him up; he dangles, then lands with a squash.
@@ -48,7 +51,7 @@ Click Chimtu's 🐕 menu-bar icon to use:
 | Action | What it does |
 | --- | --- |
 | Hide Chimtu / Show Chimtu | Toggle the pet window |
-| Jump, Dance, Spin, Shake | Trigger an animation immediately |
+| Jump, Dance, Spin, Shake, Roll Over, Howl, Give Treat | Trigger an animation immediately |
 | Sit Down | Keep Chimtu seated for a while |
 | Go to Sleep | Put Chimtu to sleep |
 | Follow Cursor | Have Chimtu move toward and wait beside the pointer |

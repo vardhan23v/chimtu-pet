@@ -35,6 +35,8 @@ final class PetController {
             self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
         }
         view.onDoubleClick = { [weak self] in self?.jump() }
+        view.onLongPress = { [weak self] in self?.enter("love", for: 2.0) }
+        scheduleHourlyHowl()
         window.onDragStart = { [weak self] in
             guard let self, !self.programmaticMove else { return }
             self.stopMover(); self.enter("held", for: 0)
@@ -57,6 +59,25 @@ final class PetController {
     private var lastMouseMove = Date()
 
     func dance() { enter("dance", for: 2.5) }
+    func giveTreat() { enter("eat", for: 2.5) }
+    func howl() { enter("howl", for: 2.0) }
+    func rollOver() { enter("roll", for: 1.2) }
+
+    /// One timer wake per hour, on the hour, with a minute of tolerance.
+    private var hourlyTimer: Timer?
+    private func scheduleHourlyHowl() {
+        hourlyTimer?.invalidate()
+        let cal = Calendar.current
+        guard let next = cal.nextDate(after: Date(), matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) else { return }
+        let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            if self.isVisible, !self.isSuspended, self.current.name != "sleep" { self.howl() }
+            self.scheduleHourlyHowl()
+        }
+        t.tolerance = 60
+        RunLoop.main.add(t, forMode: .common)
+        hourlyTimer = t
+    }
     func spin() { enter("spin", for: 0.9) }
     func shake() { enter("shake", for: 0.6) }
 
@@ -86,7 +107,7 @@ final class PetController {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
         guard isVisible, !isSuspended else { return }
-        if ["jump", "wave", "happy"].contains(current.name), Date() < stateEndsAt { return }
+        if ["jump", "wave", "happy", "eat", "love", "howl", "roll", "held"].contains(current.name), Date() < stateEndsAt { return }
         enter("alert", for: 1.1)
     }
 
@@ -180,8 +201,9 @@ final class PetController {
         case ..<0.74: enter("sleep", for: .random(in: 15...40))
         case ..<0.80: enter("scratch", for: 1.5)
         case ..<0.83: enter("jump", for: 0.6)
-        case ..<0.86: enter("dance", for: 2.5)
-        case ..<0.88: enter(Bool.random() ? "spin" : "shake", for: 0.9)
+        case ..<0.85: enter("dance", for: 2.5)
+        case ..<0.87: enter(Bool.random() ? "spin" : "shake", for: 0.9)
+        case ..<0.89: enter(["sneeze", "dig", "roll"].randomElement()!, for: 1.2)
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -224,7 +246,7 @@ final class PetController {
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
