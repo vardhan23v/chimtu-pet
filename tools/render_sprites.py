@@ -20,7 +20,7 @@ def draw(pose):
     bob = pose.get("bob", 0)*s; legs = pose.get("legs"); blink = pose.get("blink", False)
     lie = pose.get("lie", False); sit = pose.get("sit", False); wave = pose.get("wave", 0)
     tongue = pose.get("tongue", True); wag = pose.get("wag", 0); face = pose.get("facing", 0)
-    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); eat = pose.get("eat", 0); love = pose.get("love", False); howl = pose.get("howl", 0); sneeze = pose.get("sneeze", 0); dig = pose.get("dig", 0); sniff = pose.get("sniff", 0); fetch = pose.get("fetch", False); bark = pose.get("bark", 0); beg = pose.get("beg", False); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
+    look = pose.get("look", 0); air = pose.get("air", 0)*s; run = pose.get("run", False); alert = pose.get("alert", False); happy = pose.get("happy", False); held = pose.get("held", False); sad = pose.get("sad", False); tired = pose.get("tired", False); back = pose.get("back", False); shake = pose.get("shake", 0); eat = pose.get("eat", 0); love = pose.get("love", False); howl = pose.get("howl", 0); sneeze = pose.get("sneeze", 0); dig = pose.get("dig", 0); sniff = pose.get("sniff", 0); fetch = pose.get("fetch", False); bark = pose.get("bark", 0); beg = pose.get("beg", False); typing = pose.get("typing", None); sq = pose.get("squash", 1.0); scratch = pose.get("scratch", 0); yawn = pose.get("yawn", 0)
     base = (H-6)*s
     cx = W/2*s
     # body: rounded, seen from the front, behind the head
@@ -111,7 +111,7 @@ def draw(pose):
             d.arc([ex-3.5*s, ey-2*s, ex+3.5*s, ey+3*s], 200, 340, fill=BLACK, width=int(2*s)); continue
         if beg:
             E(d, ex, ey, 4.6*s, 5*s, BLACK); E(d, ex+1.4*s, ey-1.8*s, 1.8*s, 1.8*s, WHITE); E(d, ex-1.6*s, ey+1.6*s, 0.9*s, 0.9*s, WHITE); continue
-        if sniff:
+        if sniff or typing is not None:
             ey += 1.5*s
         if love or howl or sneeze:
             d.arc([ex-3.8*s, ey-1*s, ex+3.8*s, ey+5*s], 200, 340, fill=BLACK, width=int(2.2*s)); continue
@@ -168,6 +168,12 @@ def draw(pose):
             ext = (dig if i == 0 else 1-dig)*8*s
             d.rounded_rectangle([cx+lx-5.5*s, by+6*s, cx+lx+5.5*s, base+2*s-ext*0.3], radius=4*s, fill=ORANGE)
             E(d, cx+lx+(-1 if i==0 else 1)*ext*0.4, base-2*s, 7.5*s, 4.5*s, CREAM)
+    if typing is not None:
+        # front paws tapping alternately on an invisible keyboard
+        for i, e in enumerate((-1, 1)):
+            lift = (typing if i == 0 else 1 - typing) * 6*s
+            px, py = cx + e*12*s, by + bry - 10*s - lift
+            d.rounded_rectangle([px-5*s, by+2*s, px+5*s, py+4*s], radius=4*s, fill=ORANGE); E(d, px, py+4*s, 6.5*s, 4.5*s, CREAM)
     if beg:
         for e in (-1, 1):
             px, py = cx + e*13*s, by - 2*s
@@ -223,10 +229,11 @@ sniff = [draw({"sniff":v,"tongue":False,"wag":w}) for v,w in [(-1,1),(1,-1),(-1,
 fetch = [draw({"fetch":True,"tongue":False,"bob":b,"wag":w,"happy":True}) for b,w in [(0,-3),(1.5,3),(3,-3),(1.5,3),(0,-3),(1,3)]]
 bark = [draw(p) for p in [{"bark":1.0,"tongue":False,"squash":1.05,"bob":2},{"bark":0.3,"tongue":False,"squash":0.97},{"bark":1.0,"tongue":False,"squash":1.05,"bob":2},{"bark":0.3,"tongue":False,"squash":0.97},{"bark":0.6,"tongue":False},{"tongue":True,"wag":2}]]
 beg = [draw({"beg":True,"sit":True,"tongue":True,"bob":b,"wag":w}) for b,w in [(0,-2),(0.5,2),(1,-2),(0.5,2),(0,-2),(0,2)]]
-for n,f in [("held",held),("land",land),("eat",eat),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg)]: save(n,f)
+typing = [draw({"typing":v,"sit":True,"tongue":True,"bob":b}) for v,b in [(0,0),(1,0.5),(0,0),(1,0.5),(0.5,0),(0.5,0.5)]]
+for n,f in [("held",held),("land",land),("eat",eat),("typing",typing),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing)]: save(n,f)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg)]
+names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):
     for c,f in enumerate(fr): sheet.paste(f,(c*W*SCALE, r*H*SCALE), f)

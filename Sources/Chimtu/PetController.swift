@@ -1,5 +1,6 @@
 import AppKit
 import IOKit.ps
+import IOKit.hid
 
 /// Drives Chimtu's behaviour with a single low-rate timer.
 ///
@@ -156,6 +157,75 @@ final class PetController {
     private var appearanceObservation: NSKeyValueObservation?
     private var globalClickMonitor: Any?
     private var lastCharging: Bool?
+
+    // MARK: typing reactions (keystrokes are counted, never read)
+    private var keyMonitor: Any?
+    private var keyTimes: [Date] = []
+    private var deleteTimes: [Date] = []
+    private var typingSessionStart: Date?
+    private var typingStopTimer: Timer?
+    private var speedCelebrated = false
+    private(set) var typingEnabled = UserDefaults.standard.object(forKey: "typingReactions") as? Bool ?? true
+
+    /// Whether macOS has granted Input Monitoring to this app.
+    var hasInputMonitoring: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
+
+    func setTypingReactions(_ on: Bool) {
+        typingEnabled = on
+        UserDefaults.standard.set(on, forKey: "typingReactions")
+        if on { startKeyMonitor() } else { stopKeyMonitor() }
+    }
+
+    private func startKeyMonitor() {
+        guard keyMonitor == nil, typingEnabled else { return }
+        if !hasInputMonitoring {
+            // Shows the system permission prompt once; the monitor stays silent until granted.
+            IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        }
+        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.reactToKey(e) }
+    }
+    private func stopKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m) }
+        keyMonitor = nil; keyTimes.removeAll(); typingSessionStart = nil; typingStopTimer?.invalidate()
+    }
+
+    private func reactToKey(_ e: NSEvent) {
+        guard isVisible, !isSuspended else { return }
+        let now = Date()
+        keyTimes = keyTimes.filter { now.timeIntervalSince($0) < 3 } + [now]
+        if typingSessionStart == nil { typingSessionStart = now; speedCelebrated = false }
+        typingStopTimer?.invalidate()
+        typingStopTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in self?.typingStopped() }
+
+        switch e.keyCode {
+        case 36, 76:   // Return / Enter
+            if current.name == "typing" || current.name.hasPrefix("idle") { react("jump", for: 0.6, say: "Sent!") }
+            return
+        case 51, 117:  // Delete / Forward delete
+            deleteTimes = deleteTimes.filter { now.timeIntervalSince($0) < 2 } + [now]
+            if deleteTimes.count >= 6 { deleteTimes.removeAll(); react("sad", for: 1.5, say: "Oops?") }
+            return
+        default: break
+        }
+        // Steady typing (>= 8 keys in the last 3 s): tap along.
+        if keyTimes.count >= 8, current.name != "typing", !gestureActive, current.name != "held" {
+            enter("typing", for: 4); say("tak tak tak")
+        } else if current.name == "typing" {
+            stateEndsAt = now.addingTimeInterval(3)   // keep tapping while keys keep coming
+        }
+        // Fast streak: 60 keys in 20 s, once per session.
+        if !speedCelebrated, let start = typingSessionStart, now.timeIntervalSince(start) >= 20 || keyTimes.count >= 12 {
+            if keyTimes.count >= 12 { speedCelebrated = true; react("happy", for: 1.5, say: "Speed typer!", force: true) }
+        }
+    }
+
+    private func typingStopped() {
+        defer { typingSessionStart = nil }
+        if current.name == "typing" { stateEndsAt = Date() }   // let the state machine move on
+        if let start = typingSessionStart, Date().timeIntervalSince(start) > 600 {
+            react("yawn", for: 1.5, say: "Break?", force: true)
+        }
+    }
 
     /// Play a reaction unless one just played or he is mid-gesture. Returns whether it ran.
     @discardableResult
@@ -385,7 +455,7 @@ final class PetController {
         view.show(current.frames[frame])
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
@@ -428,6 +498,7 @@ final class PetController {
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in self?.reactToAppearanceChange() }
         lastCharging = isCharging
         watchDownloads()
+        startKeyMonitor()
         let dc = DistributedNotificationCenter.default()
         dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in

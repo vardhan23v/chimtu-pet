@@ -23,10 +23,10 @@ SPECS = {  # name: (frames, fps)
     "sit": (4, 3), "sleep": (2, 1), "wave": (4, 6), "jump": (6, 10), "scratch": (6, 6), "yawn": (6, 4),
     "alert": (6, 6), "happy": (6, 8), "held": (4, 4), "land": (4, 10), "spin": (6, 7), "dance": (6, 8),
     "shake": (6, 12), "sad": (6, 3), "tired": (6, 3), "eat": (6, 6), "love": (6, 6), "howl": (6, 5),
-    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4),
+    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4), "typing": (6, 10),
 }
 GESTURES = {"wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin",
-            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg"}
+            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing"}
 W, H = 224, 192 + 40   # 40 px headroom for the speech bubble
 SPRITE_Y = 40
 IDLE_LINES = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
@@ -90,6 +90,13 @@ class Chimtu:
         c.itemconfig(self.bubble_bg, state="normal"); c.tag_raise(self.bubble_bg); c.tag_raise(self.bubble_tx)
         if self.bubble_after: self.root.after_cancel(self.bubble_after)
         self.bubble_after = self.root.after(int(seconds * 1000), lambda: [c.itemconfig(i, state="hidden") for i in (self.bubble_bg, self.bubble_tx)])
+    def keys_down(self):
+        """Count of keys currently held (letters/digits/space/punct). Windows only; cheap."""
+        if not IS_WIN: return 0, False, False
+        import ctypes
+        g = ctypes.windll.user32.GetAsyncKeyState
+        n = sum(1 for vk in list(range(0x30, 0x5B)) + [0x20] + list(range(0xBA, 0xC0)) if g(vk) & 0x8000)
+        return n, bool(g(0x0D) & 0x0001), bool(g(0x08) & 0x0001)   # enter / backspace pressed since last call
     def is_night(self): h = time.localtime().tm_hour; return h >= 23 or h < 6
     def place(self): self.root.geometry(f"{W}x{H}+{int(self.x)}+{int(self.y)}")
     def foreground(self):
@@ -158,6 +165,20 @@ class Chimtu:
             self.clip = clip
             if self.state != "sleep" and not (self.state in GESTURES and time.time() < self.ends) and not self.dragging:
                 self.state, self.frame, self.ends = "sniff", 0, time.time() + 1.2; self.say("sniff sniff")
+        n, enter, back = self.keys_down()
+        now = time.time()
+        if n: self.key_times = [t for t in getattr(self, "key_times", []) if now - t < 3] + [now] * n
+        else: self.key_times = [t for t in getattr(self, "key_times", []) if now - t < 3]
+        busy = self.state in GESTURES and now < self.ends
+        if enter and (self.state == "typing" or self.state.startswith("idle")) and not self.dragging:
+            self.state, self.frame, self.ends = "jump", 0, now + 0.6; self.say("Sent!")
+        elif back:
+            self.back_times = [t for t in getattr(self, "back_times", []) if now - t < 2] + [now]
+            if len(self.back_times) >= 6: self.back_times = []; self.state, self.frame, self.ends = "sad", 0, now + 1.5; self.say("Oops?")
+        elif len(self.key_times) >= 6 and self.state != "typing" and not busy and not self.dragging:
+            self.state, self.frame, self.ends = "typing", 0, now + 4; self.say("tak tak tak")
+        elif self.state == "typing" and n:
+            self.ends = now + 3
         fg = self.foreground()
         if fg != self.fg_window:
             self.fg_window = fg

@@ -60,6 +60,10 @@ the frames.
   anywhere (glances toward them; a burst of clicks gets a bark), USB drives
   mounting/unmounting, new files in Downloads (fetches them), plugging in the
   charger, and dark/light mode changes. Greets you after the screen unlocks.
+- Typing reactions (optional, on by default): taps along while you type, hops
+  on Return, says "Oops?" after a burst of deletes, and suggests a break after a
+  long session. macOS asks once for Input Monitoring; Chimtu only counts
+  keystrokes and never reads them. Toggle it in the menu.
 - Gets lonely after five minutes without mouse movement, then goes to sleep.
 - Shows a tired animation when the Mac is on battery below 20%.
 - Optional **Follow Cursor** mode, with smooth movement toward the pointer.

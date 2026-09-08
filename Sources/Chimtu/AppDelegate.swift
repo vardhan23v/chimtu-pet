@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var toggleItem: NSMenuItem!
     private var loginItem: NSMenuItem!
     private var followItem: NSMenuItem!
+    private var typingItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let animations = Sprites.load()
@@ -40,13 +41,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         followItem = NSMenuItem(title: "Follow Cursor", action: #selector(toggleFollow), keyEquivalent: "f")
         followItem.target = self
         menu.addItem(followItem)
+        typingItem = NSMenuItem(title: "Typing Reactions", action: #selector(toggleTyping), keyEquivalent: "")
+        typingItem.target = self
+        typingItem.state = pet.typingEnabled ? .on : .off
+        menu.addItem(typingItem)
         menu.addItem(.separator())
         loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Hold: pet him · Drop a file: fetch", action: nil, keyEquivalent: "")
+        let about = NSMenuItem(title: "Click: wave · Double-click: jump · Hold: pet him · Drop a file: fetch · Type: he taps along", action: nil, keyEquivalent: "")
         about.isEnabled = false
         menu.addItem(about)
         menu.addItem(.separator())
@@ -57,6 +62,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleFollow() {
         pet.setFollowCursor(!pet.followsCursor)
         followItem.state = pet.followsCursor ? .on : .off
+    }
+
+    @objc private func toggleTyping() {
+        pet.setTypingReactions(!pet.typingEnabled)
+        typingItem.state = pet.typingEnabled ? .on : .off
+        if pet.typingEnabled && !pet.hasInputMonitoring {
+            let a = NSAlert()
+            a.messageText = "Allow Input Monitoring for Chimtu"
+            a.informativeText = "Chimtu only counts keystrokes so he can tap along while you type. He never reads what you type.\n\nTurn on Chimtu under System Settings → Privacy & Security → Input Monitoring, then relaunch him."
+            a.addButton(withTitle: "Open Settings"); a.addButton(withTitle: "Later")
+            if a.runModal() == .alertFirstButtonReturn,
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
 
     @objc private func doJump() { pet.jump() }
