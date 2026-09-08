@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 # Regenerate sprite frames if missing (they are build products, not tracked in git).
-if [ -z "$(ls Resources/frames/*.png 2>/dev/null)" ]; then /usr/bin/python3 tools/render_sprites.py Resources/frames >/dev/null; fi
+if [ -z "$(ls Resources/frames/*.png 2>/dev/null)" ]; then "${PYTHON:-/usr/bin/python3}" tools/render_sprites.py Resources/frames >/dev/null; fi
 swift build -c release -Xswiftc -Osize -Xlinker -dead_strip 2>&1 | grep -E "error|Build complete" ; test "${PIPESTATUS[0]:-0}" = 0 || exit 1
 APP=dist/Chimtu.app
 rm -rf "$APP"

@@ -11,12 +11,13 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install Pillow (sprite renderer)
-        run: python3 -m pip install --quiet pillow
+        run: python -m pip install --quiet pillow
       - name: Build Chimtu.app
-        run: |
-          sed -i '' 's|/usr/bin/python3|python3|' build.sh
-          ./build.sh
+        run: PYTHON=python ./build.sh
       - name: Zip
         run: cd dist && zip -qry ../Chimtu.zip Chimtu.app
       - uses: actions/upload-artifact@v4
