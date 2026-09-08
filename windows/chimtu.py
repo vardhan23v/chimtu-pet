@@ -95,6 +95,13 @@ class Chimtu:
     def foreground(self):
         if not IS_WIN: return None
         import ctypes; return ctypes.windll.user32.GetForegroundWindow()
+    def foreground_title(self):
+        if not IS_WIN: return ""
+        import ctypes
+        h = ctypes.windll.user32.GetForegroundWindow(); n = ctypes.windll.user32.GetWindowTextLengthW(h)
+        buf = ctypes.create_unicode_buffer(n + 1); ctypes.windll.user32.GetWindowTextW(h, buf, n + 1)
+        t = buf.value.split(" - ")[-1].split(" — ")[-1].strip()
+        return t[:18]
     def battery_low(self):
         if not IS_WIN: return False
         import ctypes
@@ -155,7 +162,10 @@ class Chimtu:
         if fg != self.fg_window:
             self.fg_window = fg
             if self.state not in {"jump", "wave", "happy", "eat", "love", "howl", "roll", "held"} or time.time() >= self.ends:
-                if not self.dragging: self.state, self.frame, self.ends = "alert", 0, time.time() + 1.1
+                if not self.dragging:
+                    self.state, self.frame, self.ends = "alert", 0, time.time() + 1.1
+                    t = self.foreground_title()
+                    if t and random.random() < 0.5: self.say(f"{t}?")
         if self.state.startswith("idle"):
             dx = mx - (self.x + W / 2)
             want = "idle_left" if dx < -60 else "idle_right" if dx > 60 else "idle"

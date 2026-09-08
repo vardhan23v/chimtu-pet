@@ -146,13 +146,104 @@ final class PetController {
     }
     private var userIdleSeconds: TimeInterval { Date().timeIntervalSince(lastMouseMove) }
 
-    /// Reactions to system events.
-    private func reactToAppSwitch(_ note: Notification) {
+    // MARK: reactions to what the user does
+    private var lastReaction = Date.distantPast
+    private var lookTarget: CGPoint?          // screen point the eyes glance at (set by global clicks)
+    private var lookUntil = Date.distantPast
+    private var clickTimes: [Date] = []
+    private var downloadsSource: DispatchSourceFileSystemObject?
+    private var downloadsSeen: Set<String> = []
+    private var appearanceObservation: NSKeyValueObservation?
+    private var globalClickMonitor: Any?
+    private var lastCharging: Bool?
+
+    /// Play a reaction unless one just played or he is mid-gesture. Returns whether it ran.
+    @discardableResult
+    private func react(_ state: String, for seconds: TimeInterval, say line: String? = nil, force: Bool = false) -> Bool {
+        guard isVisible, !isSuspended else { return false }
+        if !force {
+            if Date().timeIntervalSince(lastReaction) < 1.5 { return false }
+            if gestureActive || current.name == "held" { return false }
+        } else if current.name == "held" { return false }
+        lastReaction = Date()
+        enter(state, for: seconds)
+        if let line { say(line) }
+        return true
+    }
+
+    private func appName(_ note: Notification) -> String? {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-        guard isVisible, !isSuspended else { return }
-        if ["jump", "wave", "happy", "eat", "love", "howl", "roll", "held"].contains(current.name), Date() < stateEndsAt { return }
-        enter("alert", for: 1.1)
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return app.localizedName ?? "that"
+    }
+
+    private func reactToAppSwitch(_ note: Notification) {
+        guard let name = appName(note) else { return }
+        react("alert", for: 1.1, say: Bool.random() ? "\(name)?" : nil)
+    }
+    private func reactToAppLaunch(_ note: Notification) {
+        guard let name = appName(note) else { return }
+        react("happy", for: 1.5, say: "Ooh, \(name)!", force: true)
+    }
+    private func reactToAppQuit(_ note: Notification) {
+        guard let name = appName(note) else { return }
+        react("wave", for: 1.2, say: "Bye \(name)", force: true)
+    }
+    private func reactToSpaceChange() { react("jump", for: 0.6, say: "Whee!") }
+    private func reactToMount(_ note: Notification) {
+        let name = (note.userInfo?["NSWorkspaceVolumeLocalizedNameKey"] as? String) ?? "drive"
+        react("sniff", for: 1.4, say: "New drive: \(name)", force: true)
+    }
+    private func reactToUnmount(_ note: Notification) {
+        let name = (note.userInfo?["NSWorkspaceVolumeLocalizedNameKey"] as? String) ?? "drive"
+        react("wave", for: 1.2, say: "Bye \(name)", force: true)
+    }
+    private func reactToGlobalClick(_ event: NSEvent) {
+        // Glance toward the click; a burst of clicks gets a bark.
+        lookTarget = NSEvent.mouseLocation; lookUntil = Date().addingTimeInterval(1.5)
+        let now = Date()
+        clickTimes = clickTimes.filter { now.timeIntervalSince($0) < 2 } + [now]
+        if clickTimes.count >= 6 { clickTimes.removeAll(); react("bark", for: 1.0, say: "Busy busy!") }
+    }
+    fileprivate func reactToPowerChange() {
+        let charging = isCharging
+        defer { lastCharging = charging }
+        guard let was = lastCharging, was != charging else { return }
+        if charging { react("happy", for: 1.5, say: "Charging!", force: true) }
+        else { react("alert", for: 1.1, say: "Unplugged", force: true) }
+    }
+    private var isCharging: Bool {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return false }
+        for src in list {
+            if let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any],
+               let state = d[kIOPSPowerSourceStateKey] as? String { return state == kIOPSACPowerValue }
+        }
+        return false
+    }
+    private func reactToAppearanceChange() {
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        if dark { react("yawn", for: 1.5, say: "Night night", force: true) }
+        else { react("alert", for: 1.1, say: "Bright!", force: true) }
+    }
+
+    /// Event-driven watch on ~/Downloads: a new file gets fetched.
+    private func watchDownloads() {
+        guard let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+        downloadsSeen = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+        let fd = open(dir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
+        src.setEventHandler { [weak self] in
+            guard let self else { return }
+            let now = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            let added = now.subtracting(self.downloadsSeen).filter { !$0.hasPrefix(".") && !$0.hasSuffix(".download") && !$0.hasSuffix(".crdownload") && !$0.hasSuffix(".part") }
+            self.downloadsSeen = now
+            if let name = added.sorted().first { self.react("fetch", for: 2.0, say: "New download: \(name)", force: true) }
+        }
+        src.setCancelHandler { close(fd) }
+        src.resume()
+        downloadsSource = src
     }
 
     /// Follow-cursor mode: Chimtu trots toward the mouse and idles beside it.
@@ -278,8 +369,9 @@ final class PetController {
     /// While idling, pick the idle variant whose eyes point toward the cursor.
     /// Uses the cached mouse location on the existing tick: no extra wakeups.
     private func idleVariantForCursor() -> Animation? {
-        let mouse = NSEvent.mouseLocation
-        let dx = mouse.x - window.frame.midX
+        var point = NSEvent.mouseLocation
+        if let t = lookTarget, Date() < lookUntil { point = t }
+        let dx = point.x - window.frame.midX
         let name = dx < -60 ? "idle_left" : (dx > 60 ? "idle_right" : "idle")
         return animations[name]
     }
@@ -326,12 +418,30 @@ final class PetController {
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
         ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppSwitch(n) }
+        ws.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppLaunch(n) }
+        ws.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppQuit(n) }
+        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.reactToSpaceChange() }
+        ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { [weak self] n in self?.reactToMount(n) }
+        ws.addObserver(forName: NSWorkspace.didUnmountNotification, object: nil, queue: .main) { [weak self] n in self?.reactToUnmount(n) }
+        // Global mouse clicks need no special permission (keyboard would, so we don't watch typing).
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in self?.reactToGlobalClick(e) }
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in self?.reactToAppearanceChange() }
+        lastCharging = isCharging
+        watchDownloads()
         let dc = DistributedNotificationCenter.default()
         dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
         dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             self?.suspend(false); self?.enter("happy", for: 1.5); self?.say("Welcome back!")
         }
         NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in self?.restartTimer() }
+        // Charger plug/unplug: IOKit power-source notifications, event-driven.
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        if let src = IOPSNotificationCreateRunLoopSource({ ctx in
+            guard let ctx else { return }
+            Unmanaged<PetController>.fromOpaque(ctx).takeUnretainedValue().reactToPowerChange()
+        }, ctx)?.takeRetainedValue() {
+            CFRunLoopAddSource(CFRunLoopGetMain(), src, .defaultMode)
+        }
     }
 
     private func placeAtBottom() {

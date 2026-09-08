@@ -55,7 +55,11 @@ the frames.
 - Cursor-aware idle poses: Chimtu looks toward the mouse.
 - Click to alternate between a wave and a happy wiggle; double-click to jump.
 - Drag Chimtu to pick him up; he dangles, then lands with a squash.
-- Reacts when you switch applications and greets you after the screen unlocks.
+- Reacts to what you do: switching apps (names them), opening an app ("Ooh,
+  Safari!"), quitting one (waves bye), switching Spaces (jumps), clicks
+  anywhere (glances toward them; a burst of clicks gets a bark), USB drives
+  mounting/unmounting, new files in Downloads (fetches them), plugging in the
+  charger, and dark/light mode changes. Greets you after the screen unlocks.
 - Gets lonely after five minutes without mouse movement, then goes to sleep.
 - Shows a tired animation when the Mac is on battery below 20%.
 - Optional **Follow Cursor** mode, with smooth movement toward the pointer.
