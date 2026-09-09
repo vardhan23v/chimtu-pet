@@ -9,13 +9,13 @@ Named after the Telugu internet meme. Native on macOS, ported to Windows. ~0.1% 
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge"></a>
 </p>
 <p align="center">
-  <img alt="macOS 13+ universal" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20Silicon%20%2B%20Intel-000000?style=flat-square&logo=apple&logoColor=white">
-  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square&logo=windows&logoColor=white">
-  <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9%20%C2%B7%20AppKit-F05138?style=flat-square&logo=swift&logoColor=white">
-  <img alt="Python 3.12 Tk" src="https://img.shields.io/badge/Python-3.12%20%C2%B7%20Tk-3776AB?style=flat-square&logo=python&logoColor=white">
-  <img alt="43 animations" src="https://img.shields.io/badge/animations-43-ff6f91?style=flat-square">
-  <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-~0.1%25-brightgreen?style=flat-square">
-  <img alt="App size" src="https://img.shields.io/badge/macOS%20app-2.2%20MB-lightgrey?style=flat-square">
+  <img alt="macOS 13+ universal" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20Silicon%20%2B%20Intel-000000?style=for-the-badge&logo=apple&logoColor=white">
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=for-the-badge&logo=windows&logoColor=white">
+  <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9%20%C2%B7%20AppKit-F05138?style=for-the-badge&logo=swift&logoColor=white">
+  <img alt="Python 3.12 Tk" src="https://img.shields.io/badge/Python-3.12%20%C2%B7%20Tk-3776AB?style=for-the-badge&logo=python&logoColor=white">
+  <img alt="43 animations" src="https://img.shields.io/badge/animations-43-ff6f91?style=for-the-badge">
+  <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-~0.1%25-brightgreen?style=for-the-badge">
+  <img alt="App size" src="https://img.shields.io/badge/macOS%20app-2.2%20MB-lightgrey?style=for-the-badge">
 </p>
 
 <p align="center"><img src="docs/preview.png" alt="Chimtu in a few of his moods" width="672"></p>
