@@ -45,8 +45,11 @@ the frames.
 ## Features
 
 - Idle, sit, sleep, walk, run, scratch, yawn, wave, jump, dance, spin, shake,
-  roll over, dig, sneeze, howl, eat, love, sniff, fetch, bark, beg, alert,
-  happy, sad, and tired animations.
+  roll over, dig, sneeze, howl, eat, love, sniff, fetch, bark, beg, typing,
+  groove, focus, wink, celebrate, stretch, peek, think, laugh, pout, salute,
+  hiccup, chase-tail, and zoomies, plus alert, happy, sad, and tired.
+- Tickle him with four quick clicks (he laughs); keep going and he gets shy.
+  Drag him around three times and he pouts. Copy a long text and he thinks.
 - Grooves when Music or Spotify starts playing, and shows the track name.
 - Focus timer (25 min): he sits with reading glasses, checks in halfway, and
   celebrates when time is up. Reminders: pick 5/10/30/60 minutes and a note;

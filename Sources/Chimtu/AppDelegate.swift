@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
         menu.addItem(.separator())
-        for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Roll Over", #selector(doRoll)), ("Howl", #selector(doHowl)), ("Give Treat", #selector(doTreat)), ("Bark", #selector(doBark)), ("Beg", #selector(doBeg)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
+        for (title, sel) in [("Jump", #selector(doJump)), ("Dance", #selector(doDance)), ("Spin", #selector(doSpin)), ("Shake", #selector(doShake)), ("Roll Over", #selector(doRoll)), ("Howl", #selector(doHowl)), ("Give Treat", #selector(doTreat)), ("Bark", #selector(doBark)), ("Beg", #selector(doBeg)), ("Zoomies", #selector(doZoomies)), ("Stretch", #selector(doStretch)), ("Salute", #selector(doSalute)), ("Sit Down", #selector(doSit)), ("Go to Sleep", #selector(doSleep))] {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         menu.addItem(.separator())
@@ -134,6 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func doTreat() { pet.giveTreat() }
     @objc private func doBark() { pet.bark() }
     @objc private func doBeg() { pet.beg() }
+    @objc private func doZoomies() { pet.zoomies() }
+    @objc private func doStretch() { pet.stretch() }
+    @objc private func doSalute() { pet.salute() }
     @objc private func setSize(_ sender: NSMenuItem) {
         pet.apply(scale: CGFloat(sender.tag) / 100)
         sender.menu?.items.forEach { $0.state = $0 == sender ? .on : .off }

@@ -21,6 +21,7 @@ final class PetController {
     private var frame = 0
     private var timer: Timer?
     private var stateEndsAt = Date()
+    private var stateStartedAt = Date()
     private var walkDirection: CGFloat = 1
     private(set) var isVisible = true
     private var isSuspended = false
@@ -33,7 +34,12 @@ final class PetController {
         view.onClick = { [weak self] in
             guard let self else { return }
             self.clickCount += 1; self.stats.clicks += 1
-            self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2)
+            let now = Date()
+            self.petClickTimes = self.petClickTimes.filter { now.timeIntervalSince($0) < 5 } + [now]
+            let recent2 = self.petClickTimes.filter { now.timeIntervalSince($0) < 2 }.count
+            if self.petClickTimes.count >= 8 { self.petClickTimes.removeAll(); self.enter("peek", for: 2.5); self.say("Shy!") }
+            else if recent2 >= 4 { self.enter("laugh", for: 1.5); self.say("Hehehe, tickles!") }
+            else { self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2) }
         }
         view.onDoubleClick = { [weak self] in self?.jump() }
         view.onLongPress = { [weak self] in self?.stats.pets += 1; self?.enter("love", for: 2.0); self?.say(["❤️", "Good boy vibes", "Chimtuuu"].randomElement()!) }
@@ -48,7 +54,10 @@ final class PetController {
         }
         window.onDragEnd = { [weak self] in
             guard let self, self.current.name == "held" else { return }
-            self.enter("land", for: 0.45)
+            let now = Date()
+            self.dragTimes = self.dragTimes.filter { now.timeIntervalSince($0) < 15 } + [now]
+            if self.dragTimes.count >= 3 { self.dragTimes.removeAll(); self.enter("pout", for: 2.5); self.say("Hey! Put me down") }
+            else { self.enter("land", for: 0.45) }
         }
         observeSystem()
         window.orderFrontRegardless()
@@ -59,6 +68,12 @@ final class PetController {
 
     private var wasAsleep = false
     private var clickCount = 0
+    private var petClickTimes: [Date] = []
+    private var dragTimes: [Date] = []
+    private var zoomiesUntil = Date.distantPast
+    func zoomies() { zoomiesUntil = Date().addingTimeInterval(3.5); walkDirection = Bool.random() ? 1 : -1; enter(walkDirection > 0 ? "run_right" : "run_left", for: 3.5); say("ZOOMIES!") }
+    func salute() { enter("salute", for: 1.5) }
+    func stretch() { enter("stretch", for: 1.5) }
     private var programmaticMove = false
     private var lastMouse = NSEvent.mouseLocation
     private var lastMouseMove = Date()
@@ -157,9 +172,10 @@ final class PetController {
         guard c != clipboardCount else { return }
         clipboardCount = c
         guard current.name != "sleep", !(gestureActive) else { return }
-        enter("sniff", for: 1.2); say("sniff sniff")
+        let len = NSPasteboard.general.string(forType: .string)?.count ?? 0
+        if len > 200 { enter("think", for: 2.0); say("Hmm, long one") } else { enter("sniff", for: 1.2); say("sniff sniff") }
     }
-    private var gestureActive: Bool { ["jump","wave","happy","eat","love","howl","roll","held","fetch","bark","beg","sniff"].contains(current.name) && Date() < stateEndsAt }
+    private var gestureActive: Bool { ["jump","wave","happy","eat","love","howl","roll","held","fetch","bark","beg","sniff","laugh","peek","pout","stretch","salute","hiccup","chase","think"].contains(current.name) && Date() < stateEndsAt }
 
     // MARK: fetch dropped files
     private func fetch(_ urls: [URL]) {
@@ -328,7 +344,7 @@ final class PetController {
     }
     private func reactToAppQuit(_ note: Notification) {
         guard let name = appName(note) else { return }
-        react("wave", for: 1.2, say: "Bye \(name)", force: true)
+        react(Bool.random() ? "wave" : "salute", for: 1.3, say: "Bye \(name)", force: true)
     }
     private func reactToSpaceChange() { react("jump", for: 0.6, say: "Whee!") }
     private func reactToMount(_ note: Notification) {
@@ -456,6 +472,7 @@ final class PetController {
     private func enter(_ name: String, for seconds: TimeInterval) {
         guard let anim = animations[name] else { return }
         wasAsleep = current.name == "sleep"
+        stateStartedAt = Date()
         current = anim
         frame = 0
         stateEndsAt = seconds > 0 ? Date().addingTimeInterval(seconds) : .distantFuture
@@ -467,7 +484,9 @@ final class PetController {
         // Waking up always starts with a yawn and stretch.
         if focusActive { enter("focus", for: 0); return }
         if musicPlaying { enter("groove", for: 0); return }
-        if current.name == "sleep" { enter("yawn", for: 1.5); return }
+        if current.name == "sleep" { enter(Bool.random() ? "yawn" : "stretch", for: 1.5); return }
+        if current.name == "sit", Date().timeIntervalSince(stateStartedAt) > 12, Double.random(in: 0..<1) < 0.5 { enter("stretch", for: 1.5); return }
+        if current.name == "eat", Double.random(in: 0..<1) < 0.3 { enter("hiccup", for: 2.0); say("hic!"); return }
         if current.name == "sad" { enter("sleep", for: .random(in: 60...180)); return }
         // Nobody around for 5 minutes: get lonely, then nap.
         if userIdleSeconds > 300, current.name != "sleep" { enter("sad", for: 3); return }
@@ -485,6 +504,8 @@ final class PetController {
         case ..<0.91: if isNight { enter("sleep", for: 120) } else { Bool.random() ? bark() : beg() }
         case ..<0.93: enter("idle", for: 4); say(Self.idleLines.randomElement()!)
         case ..<0.94: enter("wink", for: 1.0)
+        case ..<0.955: enter("chase", for: 1.8); say("Gotcha... almost")
+        case ..<0.965: if !isNight { zoomies() } else { enter("sleep", for: 120) }
         default:
             walkDirection = Bool.random() ? 1 : -1
             if let screen = window.screen ?? NSScreen.main {
@@ -530,12 +551,20 @@ final class PetController {
         view.show(current.frames[frame], hatVisible: hatOK)
         frame = (frame + 1) % current.frames.count
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate"].contains(current.name)
+            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate", "stretch", "peek", "think", "laugh", "pout", "salute", "hiccup", "chase"].contains(current.name)
             if gesture && Date() < stateEndsAt { return }
             followTick()
             return
         }
-        if current.name.hasPrefix("walk") {
+        if Date() < zoomiesUntil, current.name.hasPrefix("run") {
+            var f = window.frame
+            f.origin.x += walkDirection * 14
+            if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
+                if f.origin.x < vf.minX { f.origin.x = vf.minX; walkDirection = 1; current = animations["run_right"]! }
+                if f.origin.x > vf.maxX - f.width { f.origin.x = vf.maxX - f.width; walkDirection = -1; current = animations["run_left"]! }
+            }
+            programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
+        } else if current.name.hasPrefix("walk") {
             var f = window.frame
             f.origin.x += walkDirection * 2.5
             programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false

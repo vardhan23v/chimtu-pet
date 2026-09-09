@@ -23,10 +23,10 @@ SPECS = {  # name: (frames, fps)
     "sit": (4, 3), "sleep": (2, 1), "wave": (4, 6), "jump": (6, 10), "scratch": (6, 6), "yawn": (6, 4),
     "alert": (6, 6), "happy": (6, 8), "held": (4, 4), "land": (4, 10), "spin": (6, 7), "dance": (6, 8),
     "shake": (6, 12), "sad": (6, 3), "tired": (6, 3), "eat": (6, 6), "love": (6, 6), "howl": (6, 5),
-    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4), "typing": (6, 10), "groove": (6, 8), "focus": (6, 3), "wink": (4, 6), "celebrate": (6, 10),
+    "sneeze": (6, 8), "dig": (6, 8), "roll": (6, 6), "sniff": (6, 8), "fetch": (6, 6), "bark": (6, 8), "beg": (6, 4), "typing": (6, 10), "groove": (6, 8), "focus": (6, 3), "wink": (4, 6), "celebrate": (6, 10), "stretch": (6, 5), "peek": (6, 5), "think": (6, 3), "laugh": (6, 10), "pout": (6, 3), "salute": (6, 6), "hiccup": (6, 9), "chase": (6, 10),
 }
 GESTURES = {"wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin",
-            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate"}
+            "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate", "stretch", "peek", "think", "laugh", "pout", "salute", "hiccup", "chase"}
 W, H = 224, 192 + 40   # 40 px headroom for the speech bubble
 SPRITE_Y = 40
 IDLE_LINES = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
@@ -134,7 +134,9 @@ class Chimtu:
 
     def next_state(self):
         if getattr(self, "focus_until", 0) > time.time(): return self.enter("focus", 0)
-        if self.state == "sleep": return self.enter("yawn", 1.5)
+        if self.state == "sleep": return self.enter(random.choice(["yawn", "stretch"]), 1.5)
+        if self.state == "eat" and random.random() < 0.3: self.say("hic!"); return self.enter("hiccup", 2.0)
+        if time.time() < getattr(self, "zoom_until", 0): return
         if self.state == "sad": return self.enter("sleep", random.uniform(60, 180))
         if time.time() - self.last_move > 300: return self.enter("sad", 3)
         r = random.random()
@@ -152,6 +154,8 @@ class Chimtu:
             else: self.enter("beg", 2.5); self.say(random.choice(["Treat?", "Pleeease", "Em chestunnav?"]))
         elif r < 0.93: self.enter("idle", 4); self.say(random.choice(IDLE_LINES))
         elif r < 0.94: self.enter("wink", 1.0)
+        elif r < 0.955: self.enter("chase", 1.8); self.say("Gotcha... almost")
+        elif r < 0.965 and not self.is_night(): self.zoomies()
         else:
             sw = self.root.winfo_screenwidth()
             self.walk_dir = random.choice([1, -1])
@@ -167,7 +171,8 @@ class Chimtu:
         if clip != self.clip:
             self.clip = clip
             if self.state != "sleep" and not (self.state in GESTURES and time.time() < self.ends) and not self.dragging:
-                self.state, self.frame, self.ends = "sniff", 0, time.time() + 1.2; self.say("sniff sniff")
+                if isinstance(clip, str) and len(clip) > 200: self.state, self.frame, self.ends = "think", 0, time.time() + 2.0; self.say("Hmm, long one")
+                else: self.state, self.frame, self.ends = "sniff", 0, time.time() + 1.2; self.say("sniff sniff")
         n, enter, back = self.keys_down()
         now = time.time()
         if n: self.n_keys += n
@@ -200,6 +205,11 @@ class Chimtu:
         self.frame = (self.frame + 1) % len(frames)
         if self.follow and not self.dragging:
             if not (self.state in GESTURES and time.time() < self.ends): self.follow_tick(mx, my)
+        elif self.state.startswith("run") and now < getattr(self, "zoom_until", 0):
+            self.x += self.walk_dir * 14; sw = self.root.winfo_screenwidth()
+            if self.x < 0: self.x = 0; self.walk_dir = 1; self.state = "run_right"
+            if self.x > sw - W: self.x = sw - W; self.walk_dir = -1; self.state = "run_left"
+            self.place()
         elif self.state.startswith("walk"):
             self.x += self.walk_dir * 2.5; self.place()
         if time.time() >= self.ends and not self.dragging:
@@ -248,9 +258,15 @@ class Chimtu:
         self.place()
     def on_release(self, e):
         if self.dragging:
-            self.dragging = False; self.enter("land", 0.45); return
+            self.dragging = False
+            self.drag_times = [t for t in getattr(self, "drag_times", []) if time.time() - t < 15] + [time.time()]
+            if len(self.drag_times) >= 3: self.drag_times = []; self.say("Hey! Put me down"); return self.enter("pout", 2.5)
+            return self.enter("land", 0.45)
         if time.time() - self.press_t > 0.5: self.n_pets += 1; self.say(random.choice(["❤", "Good boy vibes", "Chimtuuu"])); return self.enter("love", 2.0)
-        self.click_count += 1
+        self.click_count += 1; now = time.time()
+        self.click_times = [t for t in getattr(self, "click_times", []) if now - t < 5] + [now]
+        if len(self.click_times) >= 8: self.click_times = []; self.say("Shy!"); return self.enter("peek", 2.5)
+        if len([t for t in self.click_times if now - t < 2]) >= 4: self.say("Hehehe, tickles!"); return self.enter("laugh", 1.5)
         self.enter("happy" if self.click_count % 2 == 0 else "wave", 1.2)
 
     # ---------- menu
@@ -260,7 +276,7 @@ class Chimtu:
         m.add_checkbutton(label="Follow Cursor", variable=self.follow_var, command=self.toggle_follow)
         m.add_separator()
         for label, st, secs in [("Jump", "jump", 0.6), ("Dance", "dance", 2.5), ("Spin", "spin", 0.9), ("Shake", "shake", 0.6),
-                                ("Roll Over", "roll", 1.2), ("Howl", "howl", 2.0), ("Give Treat", "eat", 2.5), ("Bark", "bark", 1.0), ("Beg", "beg", 2.5),
+                                ("Roll Over", "roll", 1.2), ("Howl", "howl", 2.0), ("Give Treat", "eat", 2.5), ("Bark", "bark", 1.0), ("Beg", "beg", 2.5), ("Stretch", "stretch", 1.5), ("Salute", "salute", 1.5),
                                 ("Sit Down", "sit", 15), ("Go to Sleep", "sleep", 60)]:
             m.add_command(label=label, command=lambda s=st, t=secs: self.enter(s, t))
         m.add_separator()
@@ -279,6 +295,9 @@ class Chimtu:
         self.follow = self.follow_var.get()
         if self.follow: self.enter("idle", 0)
         else: self.stop_mover(); self.next_state()
+    def zoomies(self):
+        self.zoom_until = time.time() + 3.5; self.walk_dir = random.choice([1, -1])
+        self.enter("run_right" if self.walk_dir > 0 else "run_left", 3.5); self.say("ZOOMIES!")
     def start_focus(self, minutes=25):
         self.focus_until = time.time() + minutes * 60
         self.enter("focus", 0); self.say(f"Focus: {minutes} min. Let's go!")

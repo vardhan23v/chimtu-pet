@@ -29,6 +29,7 @@ enum Sprites {
             ("held", 4, 4), ("land", 4, 10), ("spin", 6, 7), ("dance", 6, 8), ("shake", 6, 12), ("sad", 6, 3), ("tired", 6, 3),
             ("eat", 6, 6), ("love", 6, 6), ("howl", 6, 5), ("sneeze", 6, 8), ("dig", 6, 8), ("roll", 6, 6),
             ("sniff", 6, 8), ("fetch", 6, 6), ("bark", 6, 8), ("beg", 6, 4), ("typing", 6, 10), ("groove", 6, 8), ("focus", 6, 3), ("wink", 4, 6), ("celebrate", 6, 10),
+            ("stretch", 6, 5), ("peek", 6, 5), ("think", 6, 3), ("laugh", 6, 10), ("pout", 6, 3), ("salute", 6, 6), ("hiccup", 6, 9), ("chase", 6, 10),
         ]
         var out: [String: Animation] = [:]
         for (name, count, fps) in specs {
