@@ -1,6 +1,6 @@
 <h1 align="center">🐕 Chimtu</h1>
 <p align="center"><b>A tiny Shiba desktop pet that lives on your screen and reacts to what you do.</b><br>
-Named after the Telugu internet meme. Native on macOS, ported to Windows. ~0.1% CPU.</p>
+Named after the Telugu internet meme. Native on macOS, ported to Windows. ~0.1% CPU. Now with memory, moods, a settings window and optional sounds.</p>
 
 <p align="center">
   <a href="https://github.com/vardhan23v/chimtu-pet/actions/workflows/release.yml"><img alt="Build & Release" src="https://img.shields.io/github/actions/workflow/status/vardhan23v/chimtu-pet/release.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=build"></a>
@@ -15,7 +15,7 @@ Named after the Telugu internet meme. Native on macOS, ported to Windows. ~0.1% 
   <img alt="Python 3.12 Tk" src="https://img.shields.io/badge/Python-3.12%20%C2%B7%20Tk-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="43 animations" src="https://img.shields.io/badge/animations-43-ff6f91?style=for-the-badge">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-~0.1%25-brightgreen?style=for-the-badge">
-  <img alt="App size" src="https://img.shields.io/badge/macOS%20app-2.2%20MB-lightgrey?style=for-the-badge">
+  <img alt="App size" src="https://img.shields.io/badge/macOS%20app-3.5%20MB-lightgrey?style=for-the-badge">
 </p>
 
 <p align="center"><img src="docs/preview.png" alt="Chimtu in a few of his moods" width="672"></p>
@@ -26,8 +26,9 @@ Named after the Telugu internet meme. Native on macOS, ported to Windows. ~0.1% 
 2. [Quick tour](#quick-tour)
 3. [How Chimtu works](#how-chimtu-works) — architecture, state machine, rendering, timers
 4. [Feature guide](#feature-guide) — every feature, what it does, how it is triggered, how it is implemented
-   - [Idle life](#idle-life) · [Interacting with him](#interacting-with-him) · [Follow Cursor](#follow-cursor) · [Reactions to what you do](#reactions-to-what-you-do) · [Typing reactions](#typing-reactions) · [Speech bubbles](#speech-bubbles) · [Focus timer](#focus-timer) · [Reminders](#reminders) · [Music](#music) · [Hats, size, friends](#hats-size-and-friends) · [Stats](#hows-your-day) · [Night mode and battery awareness](#night-mode-and-battery-awareness) · [Menu reference](#menu-reference)
+   - [Memory and mood](#memory-and-mood) · [Settings window](#settings-window) · [Sound](#sound) · [Skins, hats and phrases](#skins-hats-and-phrases) · [Idle life](#idle-life) · [Interacting with him](#interacting-with-him) · [Follow Cursor](#follow-cursor) · [Reactions to what you do](#reactions-to-what-you-do) · [Typing reactions](#typing-reactions) · [Speech bubbles](#speech-bubbles) · [Focus timer](#focus-timer) · [Reminders](#reminders) · [Music](#music) · [Hats, size, friends](#hats-size-and-friends) · [Stats](#hows-your-day) · [Night mode and battery awareness](#night-mode-and-battery-awareness) · [Menu reference](#menu-reference)
 5. [Battery and performance](#battery-and-performance)
+5b. [Testing](#testing)
 6. [The artwork pipeline](#the-artwork-pipeline)
 7. [Windows port](#windows-port)
 8. [Build, CI and releases](#build-ci-and-releases)
@@ -54,14 +55,21 @@ Chimtu sits at the bottom-centre of your screen. Move the mouse and his eyes fol
 
 ### Architecture
 
-Chimtu is a small Swift package built with AppKit (no storyboards, no Xcode project). Four files do all the work:
+Chimtu is a small Swift package built with AppKit (no storyboards, no Xcode project), split into a pure **core** and a thin **app**:
 
-| File | Role |
+| Module / file | Role |
 | --- | --- |
+| `Sources/ChimtuCore/Behaviour.swift` | Every tunable number: the weight table, burst thresholds, cooldowns, quiet hours, which states are gestures. The Python port asserts the same values. |
+| `Sources/ChimtuCore/Brain.swift` | `Brain.chooseNext(context, rng)` — the pure state-selection function. Obligations first (focus, music, waking, loneliness), then the mood-weighted random table. Deterministic given the generator, so it is unit-tested with 100k-sample distributions. |
+| `Sources/ChimtuCore/ReactionGate.swift` | `ReactionGate` (cooldown / gesture / held rules) and `BurstCounter` (sliding-window counters for tickles, drags, deletes, clicks, keys). |
+| `Sources/ChimtuCore/Mood.swift`, `PetState.swift`, `Phrases.swift` | Mood maths, the persisted record + atomic JSON store, and the phrase table with overlays. |
+| `Sources/ChimtuCoreChecks/main.swift` | 178 assertions over the core; runs with `swift run ChimtuCoreChecks` (no XCTest needed). |
 | `Sources/Chimtu/main.swift` | Boots `NSApplication` as an *accessory* app (`LSUIElement`), which is what keeps him out of the Dock and the ⌘-Tab switcher. |
 | `Sources/Chimtu/AppDelegate.swift` | Builds the menu-bar item and menu, and forwards every menu action to the pet. Also spawns extra pets for **Add a Friend**. |
 | `Sources/Chimtu/PetWindow.swift` | `PetWindow` is a borderless, transparent, always-on-top `NSWindow` that joins every Space and ignores window cycling. `PetView` inside it owns three Core Animation layers: the **sprite**, the **hat** overlay, and the **speech bubble**. It also turns raw mouse events into click / double-click / long-press, and accepts file drops. |
-| `Sources/Chimtu/PetController.swift` | The brain. One controller = one pet. It owns the animation state machine, the timers, every system observer, and every reaction. |
+| `Sources/Chimtu/PetController.swift` | One controller = one pet. Owns the window, the frame timer and the live state; builds a `BrainContext`, applies the `Decision`, and maps `SystemEvent`s to reactions through the gate. |
+| `Sources/Chimtu/SystemObservers.swift` | All system observation in one shared object: workspace notifications, the global click and key monitors, the Downloads watcher, IOKit power callbacks, player notifications. Emits typed `SystemEvent`s to every pet. Categories the user disables are never registered. |
+| `Sources/Chimtu/Preferences.swift`, `SettingsWindow.swift`, `SoundPlayer.swift` | One struct over `UserDefaults` (same keys as v1), the SwiftUI settings window, and the sound gate/player. |
 | `Sources/Chimtu/Sprites.swift` | Loads the PNG frames from the app bundle once, decoding them into `CGImage`s, and knows each animation's frame count and frame rate. |
 
 ### The state machine
@@ -93,6 +101,36 @@ There is no display link and no run loop spinning. The pet uses:
 - **One-shot timers** for the hourly howl (fires on the hour with a minute of tolerance), focus sessions, and reminders.
 
 ## Feature guide
+
+### Memory and mood
+
+Chimtu remembers you between launches. On start he greets you by time of day ("Morning!", "Late night, hooman?"), or if you have been away more than eight hours, "Missed you! (2d)". He keeps a day streak and lifetime totals (pets, treats, clicks, keys, minutes together), all shown by **How's your day?** and in Settings → Stats.
+
+He also has a **mood**: two slow values, *happiness* (baseline 0.6, nudged up by petting, treats, clicks and play, down by being dragged around or ignored, decaying back to baseline over a couple of hours) and *energy* (drains slowly while awake over roughly a workday, recovers while asleep). Mood never adds interruptions; it only re-weights the random table. Low energy makes naps more likely, high happiness makes antics more likely, and happiness below 0.3 lets a few idles turn into a sulk.
+
+How it works: `PetState` is a versioned Codable record saved as JSON at `~/Library/Application Support/Chimtu/state.json` (Windows: `%APPDATA%\Chimtu\state.json`). Mood is integrated lazily whenever it is read, so it costs no timer. Saves happen on quit, hide, display sleep, and at most every five minutes while something changed; while unsaved changes exist the app opts out of sudden termination. A corrupt file is renamed `.bad` and he starts fresh. **Reset Chimtu** in Settings deletes the file.
+
+### Settings window
+
+Menu → **Settings…** (⌘,). A SwiftUI window with five tabs:
+
+- **General**: Launch at Login, Size, Skin, Hat, Typing reactions.
+- **Behaviour**: Chattiness (Quiet turns off idle chatter; reactions still speak), Quiet hours (default 11 pm – 6 am; replaces the old fixed night), and per-category reaction toggles: app events, clipboard, downloads & drives, music, global clicks, hourly howl. A disabled category is not merely ignored, its observer is never registered.
+- **Sound**: enable, volume, preview.
+- **Stats**: mood, energy, streak, totals, first-met date, Edit / Reload Phrases, Reset Chimtu.
+- **About**: the real version number (now taken from the git tag at build time).
+
+The window is created lazily and costs nothing while closed. Every setting is also mirrored in the menu where it existed before.
+
+### Sound
+
+Off by default. Eight tiny synthesized clips (bark, yip, awoo, sniff, snore, boing, chomp, ding; 108 KB total) are generated at build time by `tools/render_sounds.py` with nothing but the Python standard library. A table maps states to clips; jump and land only sound when *you* caused them. The gate allows at most one clip every six seconds and none during focus, quiet hours, or while suspended. Reminders and the focus finish always ding. Playback uses a throwaway `AVAudioPlayer` per clip, so no audio engine stays alive.
+
+### Skins, hats and phrases
+
+- **Skins**: *Shiba (red)* and *Cream*. The renderer is palette-parametrised, each skin is a full frame set under `frames/<skin>/`, and only the selected skin is decoded. Switching re-loads frames for every pet on screen without a restart.
+- **Hats**: party hat, cap, crown, beanie, bow, flower. Overlay PNGs on a second layer, hidden for roll, spin, shake, sneeze and held.
+- **Phrases**: every line Chimtu says has a key (`idle`, `bark`, `appLaunch`, `focusDone`, …). Settings → **Edit Phrases…** writes the defaults to `~/Library/Application Support/Chimtu/phrases.json` and opens it; edit any key, then **Reload Phrases**. Placeholders like `{app}`, `{name}`, `{minutes}`, `{time}` are substituted. A malformed file is ignored.
 
 ### Idle life
 
@@ -214,6 +252,17 @@ Menu → **How's your day?** He winks and reports minutes together, how many tim
 | Launch at Login | Registers via `SMAppService` (needs the app to be in /Applications). |
 | Quit Chimtu | Bye. |
 
+## Testing
+
+The behaviour is pure code and is tested on both platforms:
+
+```sh
+swift run -c release ChimtuCoreChecks   # 178 checks over Brain, ReactionGate, BurstCounter, Mood, PetState, Phrases
+python3 -m pytest -q tests              # the same cases against windows/chimtu_core.py
+```
+
+Command Line Tools do not ship XCTest, so the Swift checks are a plain executable with a tiny assertion harness. The Python suite additionally parses `Behaviour.swift` and asserts the weight table and thresholds are identical, so the two implementations cannot drift apart silently. CI runs both before every build.
+
 ## Battery and performance
 
 Measured on an M-series MacBook Air with Activity Monitor and `top`:
@@ -248,9 +297,9 @@ It writes the frames, the three hat overlays, `Resources/contact-sheet.png` (eve
 
 ## Windows port
 
-`windows/chimtu.py` is a second implementation in Python + Tk that loads the very same frames. It mirrors the macOS state machine (same probabilities, same durations), Follow Cursor with the same spring, click / hold / drag / double-click gestures, tickle and shy, pout, clipboard sniff/think, typing reactions, app-switch alert (naming the foreground window), speech bubbles, focus timer, reminders, stats, hourly howl, night mode, and low-battery tiredness.
+`windows/chimtu.py` is the Tk user interface; all behaviour comes from `windows/chimtu_core.py`, a line-for-line mirror of the Swift core (same weights, thresholds, mood maths and phrase keys), so the two ports cannot drift. It loads the very same frames. It mirrors the macOS state machine (same probabilities, same durations), Follow Cursor with the same spring, click / hold / drag / double-click gestures, tickle and shy, pout, clipboard sniff/think, typing reactions, app-switch alert (naming the foreground window), speech bubbles, focus timer, reminders, stats, hourly howl, night mode, and low-battery tiredness.
 
-Implementation notes: transparency uses Tk's colour-key (`-transparentcolor`), so sprite edges are crisp rather than anti-aliased; the window is `overrideredirect` + `topmost` and hidden from the taskbar; animation uses `after()` at the current frame rate; typing is detected by checking key states on the tick with `GetAsyncKeyState` (no hook, no permission); the foreground window comes from `GetForegroundWindow`; battery from `GetSystemPowerStatus`. Not ported (macOS-only APIs): file drop, hats, size menu, friends, music, Downloads/drive/charger/appearance reactions. CI packages it with PyInstaller into a single `Chimtu.exe` (about 12 MB because it bundles Python).
+Implementation notes: transparency uses Tk's colour-key (`-transparentcolor`), so sprite edges are crisp rather than anti-aliased; the window is `overrideredirect` + `topmost` and hidden from the taskbar; animation uses `after()` at the current frame rate; typing is detected by checking key states on the tick with `GetAsyncKeyState` (no hook, no permission); the foreground window comes from `GetForegroundWindow`; battery from `GetSystemPowerStatus`. v2 adds to Windows: memory and mood, launch greetings and streaks, hats, skins, sounds (`winsound`), phrases.json, on-the-hour howl, and Small/Huge sizes (Tk scales images by whole numbers only, so 140% is macOS-only, and a size change applies on restart). Not ported (macOS-only APIs): file drop, friends, music, the settings window, Downloads/drive/charger/appearance reactions. CI packages it with PyInstaller into a single `Chimtu.exe` (about 12 MB because it bundles Python).
 
 ## Build, CI and releases
 
@@ -266,12 +315,12 @@ The script compiles each architecture with `swift build --triple …` (a fat bui
 
 **Windows** — from any machine with Python 3.12: render the frames, then `python windows/chimtu.py`; or `pyinstaller --onefile --windowed --add-data "Resources/frames;frames" windows/chimtu.py`.
 
-**CI** (`.github/workflows/release.yml`) runs two jobs on every push and pull request: `build` on a macOS runner (universal app) and `windows` on a Windows runner (PyInstaller exe). Both upload artifacts. When the ref is a tag matching `v*`, both jobs also attach their zip to a GitHub Release with auto-generated notes. The workflow has `contents: write` so it can publish.
+**CI** (`.github/workflows/release.yml`) runs three jobs on every push and pull request: `test-python` (pytest + both renderers) on Ubuntu, `build` on a macOS runner (core checks, universal app, a size gate under 6 MB), and `windows` on a Windows runner (PyInstaller exe, gated on the Python tests). Signing and notarization steps are present but only run when the `APPLE_CERT_P12`, `APPLE_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID` and `APPLE_APP_PASSWORD` secrets exist; without them the app is ad-hoc signed as before. `build.sh` honours `SIGN_IDENTITY` locally the same way and stamps the version from the latest git tag. When the ref is a tag matching `v*`, both jobs also attach their zip to a GitHub Release with auto-generated notes. The workflow has `contents: write` so it can publish.
 
 **Release**:
 
 ```sh
-git tag -a v1.9.0 -m "Chimtu 1.9.0" && git push origin v1.9.0
+git tag -a v2.1.0 -m "Chimtu 2.1.0" && git push origin v2.1.0
 ```
 
 ## Privacy and permissions
@@ -295,12 +344,18 @@ git tag -a v1.9.0 -m "Chimtu 1.9.0" && git push origin v1.9.0
 | Windows: SmartScreen blocks the exe | More info → Run anyway. The exe is unsigned. |
 | Windows: edges look jagged | Tk colour-key transparency cannot anti-alias; this is cosmetic. |
 
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what shipped in 2.0 and what is planned for 2.1 (Windows per-pixel alpha, tray icon and file drop, Windows signing, calendar awareness, more skins) and 2.2 (Linux, user sprite packs, opt-in weather).
+
 ## Project layout
 
 | Path | Purpose |
 | --- | --- |
 | `Sources/Chimtu/` | Swift AppKit app: `AppDelegate` (menu), `PetController` (state machine, reactions, timers), `PetWindow` (transparent window, sprite/hat/bubble layers), `Sprites` (frame loader) |
-| `windows/chimtu.py` | Windows port in Tk, packaged to `Chimtu.exe` by CI |
+| `Sources/ChimtuCore/` | Pure behaviour core (Brain, ReactionGate, Mood, PetState, Phrases); `Sources/ChimtuCoreChecks/` tests it |
+| `windows/chimtu.py`, `windows/chimtu_core.py` | Windows port: Tk UI + a Python mirror of the core; `tests/test_core.py` (pytest) |
+| `tools/render_sounds.py` | Procedural sound clips (stdlib only) |
 | `tools/render_sprites.py` | Procedural sprite renderer |
 | `Resources/` | App icons (`.icns`, `.ico`); generated `frames/` at build time |
 | `docs/preview.png` | The image at the top of this README |

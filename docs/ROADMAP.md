@@ -1,5 +1,7 @@
 # Chimtu v2 roadmap
 
+> **Status (v2.0.0):** items A–G shipped. Notarization runs automatically once the Apple signing secrets are added to the repo. H (battery before/after numbers) is tracked in the README performance table.
+
 ## Context
 
 Chimtu (work/chimtu-pet) reached v1.8 in three days: a native Swift/AppKit macOS pet (universal, ad-hoc signed, 2.2 MB, ~0.1% CPU idle), a Python+Tk Windows port packaged by PyInstaller, 43 procedurally rendered animation sets, and a long list of event-driven reactions. Everything lives in one 637-line `PetController.swift`, there are no tests, the only UI is the menu, and the Windows port hand-copies the state-machine weights (already drifting: its hourly howl is "every 3600 s", not on the hour).

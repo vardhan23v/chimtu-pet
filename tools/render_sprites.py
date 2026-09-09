@@ -7,7 +7,12 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "Resources/frames"
 SS, SCALE = 4, 2
 W, H = 112, 96
 
-ORANGE = (226, 150, 78); DARK_OR = (200, 122, 56); CREAM = (255, 246, 228); WHITE = (255, 251, 242)
+SKINS = {
+    "shiba": dict(ORANGE=(226, 150, 78), DARK_OR=(200, 122, 56), CREAM=(255, 246, 228)),
+    "cream": dict(ORANGE=(240, 214, 170), DARK_OR=(214, 182, 132), CREAM=(255, 252, 244)),
+}
+SKIN = sys.argv[2] if len(sys.argv) > 2 else "shiba"
+ORANGE = SKINS[SKIN]["ORANGE"]; DARK_OR = SKINS[SKIN]["DARK_OR"]; CREAM = SKINS[SKIN]["CREAM"]; WHITE = (255, 251, 242)
 HOOD = (46, 44, 50); HOOD_LT = (72, 70, 78); HOOD_DK = (28, 26, 30); SPIKE = (150, 150, 158); SPIKE_DK = (105, 105, 112)
 RED = (196, 40, 48); RED_DK = (150, 26, 34); PINK = (238, 120, 150); BLACK = (30, 24, 24); NOSE = (26, 18, 18)
 EYE_RING = (235, 235, 240); EYE_IRIS = (225, 40, 60); EYE_PUPIL = (40, 10, 14)
@@ -240,6 +245,18 @@ def draw_hat(kind):
         d.chord([hx-17*s, top-8*s, hx+17*s, top+14*s], 180, 360, fill=(52, 100, 200))
         d.rounded_rectangle([hx-2*s, top+1*s, hx+24*s, top+5*s], radius=2*s, fill=(40, 80, 170))
         E(d, hx, top-8*s, 2.5*s, 2.5*s, (255, 220, 90))
+    elif kind == "beanie":
+        d.chord([hx-17*s, top-6*s, hx+17*s, top+16*s], 180, 360, fill=(90, 140, 200))
+        d.rounded_rectangle([hx-18*s, top+1*s, hx+18*s, top+7*s], radius=2*s, fill=(70, 110, 170))
+        E(d, hx, top-7*s, 4*s, 4*s, (240, 240, 245))
+    elif kind == "bow":
+        for e in (-1, 1): d.polygon([(hx+e*2*s, top+2*s), (hx+e*14*s, top-6*s), (hx+e*14*s, top+10*s)], fill=(235, 70, 110))
+        E(d, hx, top+2*s, 4*s, 4*s, (200, 40, 80))
+    elif kind == "flower":
+        for a in range(0, 360, 72):
+            import math as _m
+            E(d, hx+12*s+7*s*_m.cos(_m.radians(a)), top-2*s+7*s*_m.sin(_m.radians(a)), 4.5*s, 4.5*s, (255, 170, 200))
+        E(d, hx+12*s, top-2*s, 4*s, 4*s, (255, 220, 90))
     elif kind == "crown":
         d.polygon([(hx-14*s, top+2*s), (hx+14*s, top+2*s), (hx+14*s, top-10*s), (hx+7*s, top-3*s), (hx, top-14*s), (hx-7*s, top-3*s), (hx-14*s, top-10*s)], fill=(250, 200, 60))
         for x in (-14, 0, 14): E(d, hx+x*s, top-(10 if x else 14)*s, 2.2*s, 2.2*s, (230, 60, 90))
@@ -302,7 +319,7 @@ typing = [draw({"typing":v,"sit":True,"tongue":True,"bob":b}) for v,b in [(0,0),
 for n,f in [("held",held),("land",land),("eat",eat),("typing",typing),("stretch",stretch),("peek",peek),("think",think),("laugh",laugh),("pout",pout),("salute",salute),("hiccup",hiccup),("chase",chase),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate),("stretch",stretch),("peek",peek),("think",think),("laugh",laugh),("pout",pout),("salute",salute),("hiccup",hiccup),("chase",chase)]: save(n,f)
 save("idle_left", idle_left); save("idle_right", idle_right); save("jump", jump); save("scratch", scratch); save("yawn", yawn)
 save("idle", idle); save("walk_right", walk_r); save("walk_left", walk_l); save("sit", sit); save("sleep", sleep); save("wave", wave)
-for kind in ("party", "cap", "crown"): compress(draw_hat(kind)).save(f"{OUT}/hat_{kind}.png", optimize=True)
+for kind in ("party", "cap", "crown", "beanie", "bow", "flower"): compress(draw_hat(kind)).save(f"{OUT}/hat_{kind}.png", optimize=True)
 names = [("idle",idle),("idle_left",idle_left),("idle_right",idle_right),("walk_right",walk_r),("walk_left",walk_l),("run_right",run_r),("run_left",run_l),("sit",sit),("sleep",sleep),("wave",wave),("jump",jump),("scratch",scratch),("yawn",yawn),("alert",alert),("happy",happy),("held",held),("land",land),("spin",spin),("dance",dance),("shake",shake),("sad",sad),("tired",tired),("eat",eat),("love",love),("howl",howl),("sneeze",sneeze),("dig",dig),("roll",roll),("sniff",sniff),("fetch",fetch),("bark",bark),("beg",beg),("typing",typing),("groove",groove),("focus",focus),("wink",wink),("celebrate",celebrate),("stretch",stretch),("peek",peek),("think",think),("laugh",laugh),("pout",pout),("salute",salute),("hiccup",hiccup),("chase",chase)]
 sheet = Image.new("RGBA", (W*SCALE*6, H*SCALE*len(names)), (60,60,70,255))
 for r,(n,fr) in enumerate(names):

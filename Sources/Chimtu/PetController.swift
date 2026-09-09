@@ -1,21 +1,25 @@
 import AppKit
-import IOKit.ps
-import IOKit.hid
+import ChimtuCore
 
-/// Drives Chimtu's behaviour with a single low-rate timer.
+/// One pet on screen. Owns the window, the frame timer, and the live state;
+/// asks `Brain` what to do next and `ReactionGate` whether a reaction may play.
 ///
 /// Energy design:
-///  - one NSTimer whose interval is the current animation's frame period, with
-///    a large tolerance so the kernel can coalesce it with other wakeups;
-///  - the timer is invalidated (not just paused) while hidden, while the
-///    screen is asleep, or while the display is locked;
-///  - Low Power Mode halves the frame rate; the sleep state runs at 1 fps;
-///  - no display link, no per-frame drawing: frames are pre-decoded CGImages
-///    swapped in as layer contents.
+///  - one Timer whose interval is the current animation's frame period, with a
+///    large tolerance so the kernel can coalesce it with other wakeups;
+///  - the timer is invalidated (not paused) while hidden, while the display is
+///    asleep, or while the screen is locked;
+///  - Low Power Mode halves the frame rate; sleep runs at 1 fps;
+///  - no display link, no per-frame drawing: pre-decoded CGImages are swapped
+///    in as layer contents;
+///  - a 60 Hz mover exists only while Follow Cursor is actually moving him.
 final class PetController {
-    private let animations: [String: Animation]
+    private var animations: [String: Animation]
     private let window: PetWindow
-    private var view: PetView { window.contentView as! PetView }
+    private let view: PetView
+    private let prefs = Preferences.shared
+    private(set) var phrases: Phrases
+    private var rng = SystemRandomNumberGenerator()
 
     private var current: Animation
     private var frame = 0
@@ -25,183 +29,250 @@ final class PetController {
     private var walkDirection: CGFloat = 1
     private(set) var isVisible = true
     private var isSuspended = false
+    private var programmaticMove = false
 
-    init(animations: [String: Animation]) {
+    // Persistence (primary pet only). Friends are ephemeral.
+    private let store: StateStore?
+    private(set) var state: PetState
+    private var dirty = false
+    private var saveTimer: Timer?
+    private let launchedAt = Date()
+
+    // Gates and burst counters (pure values from ChimtuCore).
+    private var gate = ReactionGate()
+    private var tickle = BurstCounter(Behaviour.Bursts.tickle)
+    private var shy = BurstCounter(Behaviour.Bursts.shy)
+    private var pouts = BurstCounter(Behaviour.Bursts.pout)
+    private var busyClicks = BurstCounter(Behaviour.Bursts.busyClicks)
+    private var deletes = BurstCounter(Behaviour.Bursts.deletes)
+    private var keys = BurstCounter(threshold: Int.max, window: Behaviour.Bursts.typing.window)
+
+    private var clickCount = 0
+    private var lastMouse = NSEvent.mouseLocation
+    private var lastMouseMove = Date()
+    private var lookTarget: CGPoint?
+    private var lookUntil = Date.distantPast
+    private var zoomiesUntil = Date.distantPast
+    private var clipboardCount = NSPasteboard.general.changeCount
+    private var musicPlaying = false
+    var sounds: SoundPlayer?
+
+    init?(animations: [String: Animation], isPrimary: Bool, phrases: Phrases) {
+        guard let idle = animations["idle"] else { return nil }
         self.animations = animations
-        self.current = animations["idle"]!
+        self.current = idle
+        self.phrases = phrases
         window = PetWindow(size: Sprites.windowSize)
-        placeAtBottom()
+        guard let v = window.contentView as? PetView else { return nil }
+        view = v
+        store = isPrimary ? StateStore(url: StateStore.defaultURL()) : nil
+        state = store?.load() ?? PetState()
+
+        placeAtBottom(primary: isPrimary)
+        wireGestures()
+        apply(scale: CGFloat(prefs.scale))
+        if prefs.hat != "none" { view.setHat(Sprites.hat(prefs.hat, skin: prefs.skin)) }
+        scheduleHourlyHowl()
+        NotificationCenter.default.addObserver(forName: .chimtuPreferencesChanged, object: nil, queue: .main) { [weak self] _ in self?.preferencesChanged() }
+        window.orderFrontRegardless()
+        enter("idle", for: 6)
+        if isPrimary { greetOnLaunch() }
+    }
+
+    // MARK: launch greeting + memory
+
+    private func greetOnLaunch() {
+        let (key, away) = state.registerLaunch()
+        markDirty()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            if key == "missedYou" {
+                let days = Int(away / 24)
+                self.enter("happy", for: 1.5)
+                self.say(days >= 1 ? "\(self.phrases.pick("missedYou")) (\(days)d)" : self.phrases.pick("missedYou"))
+            } else {
+                self.say(self.phrases.pick(key ?? Phrases.greetingKey(hour: Calendar.current.component(.hour, from: Date()))))
+            }
+        }
+    }
+
+    private func markDirty() {
+        guard store != nil else { return }
+        if !dirty { ProcessInfo.processInfo.disableSuddenTermination() }
+        dirty = true
+        if saveTimer == nil {
+            let t = Timer(timeInterval: 300, repeats: false) { [weak self] _ in self?.saveTimer = nil; self?.saveState() }
+            t.tolerance = 60
+            RunLoop.main.add(t, forMode: .common)
+            saveTimer = t
+        }
+    }
+
+    /// Persist now (called on quit, hide, suspend, and by the dirty timer).
+    func saveState() {
+        guard let store, dirty else { return }
+        state.mood.integrate(to: Date(), asleep: current.name == "sleep")
+        state.totals.minutes += Date().timeIntervalSince(lastSaveMark) / 60
+        lastSaveMark = Date()
+        state.lastSeen = Date()
+        try? store.save(state)
+        dirty = false
+        ProcessInfo.processInfo.enableSuddenTermination()
+    }
+    private lazy var lastSaveMark = launchedAt
+
+    private func mood(_ e: Mood.Event) {
+        state.mood.integrate(to: Date(), asleep: current.name == "sleep")
+        state.mood.apply(e)
+        markDirty()
+    }
+
+    // MARK: gestures on the pet
+
+    private func wireGestures() {
         view.onClick = { [weak self] in
             guard let self else { return }
-            self.clickCount += 1; self.stats.clicks += 1
+            self.clickCount += 1; self.state.totals.clicks += 1; self.mood(.clicked)
             let now = Date()
-            self.petClickTimes = self.petClickTimes.filter { now.timeIntervalSince($0) < 5 } + [now]
-            let recent2 = self.petClickTimes.filter { now.timeIntervalSince($0) < 2 }.count
-            if self.petClickTimes.count >= 8 { self.petClickTimes.removeAll(); self.enter("peek", for: 2.5); self.say("Shy!") }
-            else if recent2 >= 4 { self.enter("laugh", for: 1.5); self.say("Hehehe, tickles!") }
+            if self.shy.record(now: now) { self.tickle.reset(); self.enter("peek", for: 2.5); self.say(self.phrases.pick("shy")) }
+            else if self.tickle.record(now: now) { self.enter("laugh", for: 1.5); self.say(self.phrases.pick("tickle")) }
             else { self.enter(self.clickCount % 2 == 0 ? "happy" : "wave", for: 1.2) }
         }
-        view.onDoubleClick = { [weak self] in self?.jump() }
-        view.onLongPress = { [weak self] in self?.stats.pets += 1; self?.enter("love", for: 2.0); self?.say(["❤️", "Good boy vibes", "Chimtuuu"].randomElement()!) }
+        view.onDoubleClick = { [weak self] in self?.jump(userInitiated: true) }
+        view.onLongPress = { [weak self] in
+            guard let self else { return }
+            self.state.totals.pets += 1; self.mood(.petted)
+            self.enter("love", for: 2.0); self.say(self.phrases.pick("love"))
+        }
         view.onFileDrop = { [weak self] urls in self?.fetch(urls) }
-        apply(scale: UserDefaults.standard.double(forKey: "petScale").nonZeroOr(1))
-        clipboardCount = NSPasteboard.general.changeCount
-        if hatName != "none" { view.setHat(Sprites.hat(hatName)) }
-        scheduleHourlyHowl()
         window.onDragStart = { [weak self] in
             guard let self, !self.programmaticMove else { return }
             self.stopMover(); self.enter("held", for: 0)
         }
         window.onDragEnd = { [weak self] in
             guard let self, self.current.name == "held" else { return }
-            let now = Date()
-            self.dragTimes = self.dragTimes.filter { now.timeIntervalSince($0) < 15 } + [now]
-            if self.dragTimes.count >= 3 { self.dragTimes.removeAll(); self.enter("pout", for: 2.5); self.say("Hey! Put me down") }
-            else { self.enter("land", for: 0.45) }
+            if self.pouts.record() { self.mood(.pouted); self.enter("pout", for: 2.5); self.say(self.phrases.pick("pout")) }
+            else { self.enter("land", for: 0.45, userInitiated: true) }
         }
-        observeSystem()
-        window.orderFrontRegardless()
-        enter("idle", for: 6)
     }
 
-    // MARK: state machine
+    // MARK: public commands (menu)
 
-    private var wasAsleep = false
-    private var clickCount = 0
-    private var petClickTimes: [Date] = []
-    private var dragTimes: [Date] = []
-    private var zoomiesUntil = Date.distantPast
-    func zoomies() { zoomiesUntil = Date().addingTimeInterval(3.5); walkDirection = Bool.random() ? 1 : -1; enter(walkDirection > 0 ? "run_right" : "run_left", for: 3.5); say("ZOOMIES!") }
-    func salute() { enter("salute", for: 1.5) }
+    func jump(userInitiated: Bool = true) { enter("jump", for: 0.6, userInitiated: userInitiated) }
+    func dance() { mood(.played); enter("dance", for: 2.5) }
+    func spin() { enter("spin", for: 0.9) }
+    func shake() { enter("shake", for: 0.6) }
+    func rollOver() { enter("roll", for: 1.2) }
+    func howl() { enter("howl", for: 2.0) }
+    func giveTreat() { state.totals.treats += 1; mood(.treat); enter("eat", for: 2.5) }
+    func bark() { enter("bark", for: 1.0); say(phrases.pick("bark")) }
+    func beg() { enter("beg", for: 2.5); say(phrases.pick("beg")) }
     func stretch() { enter("stretch", for: 1.5) }
-    private var programmaticMove = false
-    private var lastMouse = NSEvent.mouseLocation
-    private var lastMouseMove = Date()
-
-    func dance() { enter("dance", for: 2.5) }
-
-    // MARK: stats for "How's your day?"
-    private var stats = (pets: 0, treats: 0, clicks: 0, keys: 0, launched: Date())
-    func howIsYourDay() {
-        let mins = Int(Date().timeIntervalSince(stats.launched) / 60)
-        enter("wink", for: 1.5)
-        say("\(mins) min with you · \(stats.pets) pets · \(stats.treats) treats · \(stats.keys) keys")
+    func salute() { enter("salute", for: 1.5) }
+    func sitDown() { enter("sit", for: .random(in: 10...20)) }
+    func goToSleep() { enter("sleep", for: .random(in: 30...90)) }
+    func zoomies() {
+        mood(.exertion)
+        zoomiesUntil = Date().addingTimeInterval(3.5)
+        walkDirection = Bool.random() ? 1 : -1
+        enter(walkDirection > 0 ? "run_right" : "run_left", for: 3.5)
+        say(phrases.pick("zoomies"))
     }
-
-    // MARK: hats
-    private(set) var hatName: String = UserDefaults.standard.string(forKey: "hat") ?? "none"
-    func setHat(_ name: String) {
-        hatName = name; UserDefaults.standard.set(name, forKey: "hat")
-        view.setHat(name == "none" ? nil : Sprites.hat(name))
-        if name != "none" { react("happy", for: 1.2, say: "Fancy!", force: true) }
-    }
-
-    // MARK: focus timer
-    private var focusTimer: Timer?
-    private var focusEnds: Date?
-    var focusActive: Bool { focusEnds != nil }
-    func startFocus(minutes: Int) {
-        stopFocus(quiet: true)
-        focusEnds = Date().addingTimeInterval(Double(minutes) * 60)
-        enter("focus", for: 0); say("Focus: \(minutes) min. Let's go!")
-        let half = Timer(fire: Date().addingTimeInterval(Double(minutes) * 30), interval: 0, repeats: false) { [weak self] _ in
-            guard let self, self.focusActive else { return }
-            self.say("Halfway. Nice."); if self.current.name != "focus" { self.enter("focus", for: 0) }
-        }
-        half.tolerance = 30; RunLoop.main.add(half, forMode: .common)
-        let end = Timer(fire: focusEnds!, interval: 0, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.focusEnds = nil
-            self.enter("celebrate", for: 3); self.say("Break time! 🎉")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if self.current.name == "celebrate" { self.chooseNextState() } }
-        }
-        end.tolerance = 15; RunLoop.main.add(end, forMode: .common)
-        focusTimer = end
-    }
-    func stopFocus(quiet: Bool = false) {
-        focusTimer?.invalidate(); focusTimer = nil
-        guard focusEnds != nil else { return }
-        focusEnds = nil
-        if !quiet { say("Focus ended"); chooseNextState() }
-    }
-
-    // MARK: reminders
-    func remind(in minutes: Int, text: String) {
-        let t = Timer(fire: Date().addingTimeInterval(Double(minutes) * 60), interval: 0, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.react("bark", for: 1.5, say: text.isEmpty ? "Reminder!" : text, force: true)
-            self.view.say(text.isEmpty ? "Reminder!" : text, for: 8)
-        }
-        t.tolerance = 10; RunLoop.main.add(t, forMode: .common)
-        say("Okay! In \(minutes) min.")
-    }
-
-    // MARK: music -> groove
-    private var musicPlaying = false
-    private func reactToMusic(_ note: Notification) {
-        let state = (note.userInfo?["Player State"] as? String) ?? ""
-        let playing = state == "Playing"
-        guard playing != musicPlaying else { return }
-        musicPlaying = playing
-        if playing {
-            let title = (note.userInfo?["Name"] as? String) ?? ""
-            if current.name != "held", !focusActive { enter("groove", for: 0); say(title.isEmpty ? "🎵" : "🎵 \(title)") }
-        } else if current.name == "groove" { chooseNextState() }
-    }
-    func bark() { enter("bark", for: 1.0); say(["Bow!", "Bow bow!", "Chimtu!"].randomElement()!) }
-    func beg() { enter("beg", for: 2.5); say(["Treat?", "Pleeease", "Em chestunnav?"].randomElement()!) }
     func say(_ text: String) { view.say(text) }
 
-    // MARK: size
+    func howIsYourDay() {
+        state.mood.integrate(to: Date(), asleep: current.name == "sleep")
+        let t = state.totals
+        let mins = Int(t.minutes + Date().timeIntervalSince(lastSaveMark) / 60)
+        enter("wink", for: 1.5)
+        let streak = state.streakDays > 1 ? " · day \(state.streakDays) streak" : ""
+        view.say("\(state.mood.emoji) \(state.mood.energyBar) · \(mins) min · \(t.pets) pets · \(t.treats) treats · \(t.keys) keys\(streak)", for: 5)
+    }
+
+    // MARK: hats, size, skin (preferences)
+
+    var hatName: String { prefs.hat }
+    func setHat(_ name: String) {
+        prefs.hat = name
+        if name != "none" { react("happy", for: 1.2, say: phrases.pick("fancy"), force: true) }
+    }
     private(set) var scale: CGFloat = 1
     func apply(scale newScale: CGFloat) {
         scale = newScale
-        UserDefaults.standard.set(Double(newScale), forKey: "petScale")
         var f = window.frame
         let newSize = CGSize(width: Sprites.windowSize.width * newScale, height: Sprites.windowSize.height * newScale)
-        f.origin.x += (f.width - newSize.width) / 2   // keep the pet centred on its old spot
+        f.origin.x += (f.width - newSize.width) / 2
         f.size = newSize
         window.setFrame(f, display: true)
         view.apply(scale: newScale)
     }
-
-    // MARK: clipboard sniffing
-    private var clipboardCount = 0
-    private func checkClipboard() {
-        let c = NSPasteboard.general.changeCount
-        guard c != clipboardCount else { return }
-        clipboardCount = c
-        guard current.name != "sleep", !(gestureActive) else { return }
-        let len = NSPasteboard.general.string(forType: .string)?.count ?? 0
-        if len > 200 { enter("think", for: 2.0); say("Hmm, long one") } else { enter("sniff", for: 1.2); say("sniff sniff") }
+    private func preferencesChanged() {
+        if CGFloat(prefs.scale) != scale { apply(scale: CGFloat(prefs.scale)) }
+        view.setHat(prefs.hat == "none" ? nil : Sprites.hat(prefs.hat, skin: prefs.skin))
     }
-    private var gestureActive: Bool { ["jump","wave","happy","eat","love","howl","roll","held","fetch","bark","beg","sniff","laugh","peek","pout","stretch","salute","hiccup","chase","think"].contains(current.name) && Date() < stateEndsAt }
+    /// Swap the whole frame set (skin change). Keeps the current state if it exists in the new set.
+    func replaceAnimations(_ new: [String: Animation]) {
+        guard new["idle"] != nil else { return }
+        animations = new
+        enter(animations[current.name] != nil ? current.name : "idle", for: 3)
+    }
+    func reloadPhrases(_ p: Phrases) { phrases = p }
 
-    // MARK: fetch dropped files
-    private func fetch(_ urls: [URL]) {
-        guard let url = urls.first else { return }
-        enter("fetch", for: 2.0)
-        say("Fetched \(url.lastPathComponent)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { NSWorkspace.shared.open(url) }
+    // MARK: focus timer
+
+    private var focusTimers: [Timer] = []
+    private var focusEnds: Date?
+    var focusActive: Bool { focusEnds != nil }
+    func startFocus(minutes: Int) {
+        stopFocus(quiet: true)
+        let ends = Date().addingTimeInterval(Double(minutes) * 60)
+        focusEnds = ends
+        enter("focus", for: 0); say(phrases.pick("focusStart", ["minutes": "\(minutes)"]))
+        let half = Timer(fire: Date().addingTimeInterval(Double(minutes) * 30), interval: 0, repeats: false) { [weak self] _ in
+            guard let self, self.focusActive else { return }
+            self.say(self.phrases.pick("focusHalf")); if self.current.name != "focus" { self.enter("focus", for: 0) }
+        }
+        let end = Timer(fire: ends, interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.focusEnds = nil; self.focusTimers.removeAll()
+            self.enter("celebrate", for: 3); self.say(self.phrases.pick("focusDone")); self.sounds?.play(.ding)
+        }
+        half.tolerance = 30; end.tolerance = 15
+        RunLoop.main.add(half, forMode: .common); RunLoop.main.add(end, forMode: .common)
+        focusTimers = [half, end]
+    }
+    func stopFocus(quiet: Bool = false) {
+        focusTimers.forEach { $0.invalidate() }; focusTimers.removeAll()
+        guard focusEnds != nil else { return }
+        focusEnds = nil
+        if !quiet { say(phrases.pick("focusEnd")); chooseNextState() }
     }
 
-    private var isNight: Bool { let h = Calendar.current.component(.hour, from: Date()); return h >= 23 || h < 6 }
-    private static let idleLines = ["Chimtu!", "Bow bow!", "Em chestunnav?", "Pet me?", "Zzz... no wait", "Treat unda?", "Hi hooman"]
-    func giveTreat() { stats.treats += 1; enter("eat", for: 2.5) }
-    func howl() { enter("howl", for: 2.0) }
-    func rollOver() { enter("roll", for: 1.2) }
+    // MARK: reminders
 
-    /// One timer wake per hour, on the hour, with a minute of tolerance.
+    func remind(in minutes: Int, text: String) {
+        let line = text.isEmpty ? phrases.pick("reminder") : text
+        let t = Timer(fire: Date().addingTimeInterval(Double(minutes) * 60), interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.react("bark", for: 1.5, say: nil, force: true)
+            self.view.say(line, for: 8)
+            self.sounds?.play(.ding)
+        }
+        t.tolerance = 10; RunLoop.main.add(t, forMode: .common)
+        say(phrases.pick("remindSet", ["minutes": "\(minutes)"]))
+    }
+
+    /// One wake per hour, on the hour, with a minute of tolerance.
     private var hourlyTimer: Timer?
     private func scheduleHourlyHowl() {
         hourlyTimer?.invalidate()
-        let cal = Calendar.current
-        guard let next = cal.nextDate(after: Date(), matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) else { return }
+        guard let next = Calendar.current.nextDate(after: Date(), matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) else { return }
         let t = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
             guard let self else { return }
-            if self.isVisible, !self.isSuspended, self.current.name != "sleep" {
+            if self.prefs.isEnabled(.hourlyHowl), self.isVisible, !self.isSuspended, self.current.name != "sleep", !self.focusActive {
                 self.howl()
-                let f = DateFormatter(); f.dateFormat = "h a"; self.say("Awooo, it's \(f.string(from: Date()))")
+                let f = DateFormatter(); f.dateFormat = "h a"
+                self.say(self.phrases.pick("howl", ["time": f.string(from: Date())]))
             }
             self.scheduleHourlyHowl()
         }
@@ -209,237 +280,137 @@ final class PetController {
         RunLoop.main.add(t, forMode: .common)
         hourlyTimer = t
     }
-    func spin() { enter("spin", for: 0.9) }
-    func shake() { enter("shake", for: 0.6) }
 
-    /// True when running on battery below 20%.
-    private var batteryIsLow: Bool {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return false }
-        for src in list {
-            guard let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any] else { continue }
-            let charging = (d[kIOPSIsChargingKey] as? Bool) ?? false
-            let cap = (d[kIOPSCurrentCapacityKey] as? Int) ?? 100
-            let max = (d[kIOPSMaxCapacityKey] as? Int) ?? 100
-            if !charging, max > 0, cap * 100 / max < 20 { return true }
+    // MARK: reactions
+
+    /// Play a reaction unless the gate says no. Returns whether it ran.
+    @discardableResult
+    private func react(_ stateName: String, for seconds: TimeInterval, say line: String?, force: Bool = false) -> Bool {
+        guard isVisible, !isSuspended else { return false }
+        let now = Date()
+        guard gate.allows(now: now, current: current.name, currentEndsAt: stateEndsAt, force: force) else { return false }
+        gate.record(now: now)
+        enter(stateName, for: seconds)
+        if let line { say(line) }
+        return true
+    }
+    private var gestureActive: Bool { ReactionGate.gestureActive(current: current.name, currentEndsAt: stateEndsAt, now: Date()) }
+
+    /// Entry point for everything `SystemObservers` reports.
+    func handle(_ event: SystemEvent) {
+        switch event {
+        case .suspend(let s): suspend(s)
+        case .unlocked: enter("happy", for: 1.5); say(phrases.pick("welcomeBack"))
+        case .appActivated(let app): react("alert", for: 1.1, say: Bool.random() ? phrases.pick("appSwitch", ["app": app]) : nil)
+        case .appLaunched(let app): react("happy", for: 1.5, say: phrases.pick("appLaunch", ["app": app]), force: true)
+        case .appQuit(let app): react(Bool.random() ? "wave" : "salute", for: 1.3, say: phrases.pick("appQuit", ["app": app]), force: true)
+        case .spaceChanged: react("jump", for: 0.6, say: phrases.pick("space"))
+        case .mounted(let name): react("sniff", for: 1.4, say: phrases.pick("mount", ["name": name]), force: true)
+        case .unmounted(let name): react("wave", for: 1.2, say: phrases.pick("unmount", ["name": name]), force: true)
+        case .download(let name): react("fetch", for: 2.0, say: phrases.pick("download", ["name": name]), force: true)
+        case .globalClick(let p):
+            lookTarget = p; lookUntil = Date().addingTimeInterval(1.5)
+            if busyClicks.record() { react("bark", for: 1.0, say: phrases.pick("busy")) }
+        case .power(let charging):
+            if charging { react("happy", for: 1.5, say: phrases.pick("charging"), force: true) }
+            else { react("alert", for: 1.1, say: phrases.pick("unplugged"), force: true) }
+        case .appearance(let dark):
+            if dark { react("yawn", for: 1.5, say: phrases.pick("dark"), force: true) }
+            else { react("alert", for: 1.1, say: phrases.pick("light"), force: true) }
+        case .music(let playing, let title):
+            guard playing != musicPlaying else { return }
+            musicPlaying = playing
+            if playing {
+                if current.name != "held", !focusActive { enter("groove", for: 0); say(title.isEmpty ? phrases.pick("musicNoTitle") : phrases.pick("music", ["title": title])) }
+            } else if current.name == "groove" { chooseNextState() }
+        case .key(let code): reactToKey(code)
+        case .lowPowerModeChanged: restartTimer()
         }
-        return false
     }
 
-    /// Seconds since the user last moved the mouse (sampled on the tick).
-    private func noteMouseActivity() {
-        let m = NSEvent.mouseLocation
-        if m != lastMouse { lastMouse = m; lastMouseMove = Date() }
-    }
-    private var userIdleSeconds: TimeInterval { Date().timeIntervalSince(lastMouseMove) }
+    // MARK: typing (counts only; never reads characters)
 
-    // MARK: reactions to what the user does
-    private var lastReaction = Date.distantPast
-    private var lookTarget: CGPoint?          // screen point the eyes glance at (set by global clicks)
-    private var lookUntil = Date.distantPast
-    private var clickTimes: [Date] = []
-    private var downloadsSource: DispatchSourceFileSystemObject?
-    private var downloadsSeen: Set<String> = []
-    private var appearanceObservation: NSKeyValueObservation?
-    private var globalClickMonitor: Any?
-    private var lastCharging: Bool?
-
-    // MARK: typing reactions (keystrokes are counted, never read)
-    private var keyMonitor: Any?
-    private var keyTimes: [Date] = []
-    private var deleteTimes: [Date] = []
     private var typingSessionStart: Date?
     private var typingStopTimer: Timer?
     private var speedCelebrated = false
-    private(set) var typingEnabled = UserDefaults.standard.object(forKey: "typingReactions") as? Bool ?? true
 
-    /// Whether macOS has granted Input Monitoring to this app.
-    var hasInputMonitoring: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
-
-    func setTypingReactions(_ on: Bool) {
-        typingEnabled = on
-        UserDefaults.standard.set(on, forKey: "typingReactions")
-        if on { startKeyMonitor() } else { stopKeyMonitor() }
-    }
-
-    private func startKeyMonitor() {
-        guard keyMonitor == nil, typingEnabled else { return }
-        if !hasInputMonitoring {
-            // Shows the system permission prompt once; the monitor stays silent until granted.
-            IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-        }
-        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.reactToKey(e) }
-    }
-    private func stopKeyMonitor() {
-        if let m = keyMonitor { NSEvent.removeMonitor(m) }
-        keyMonitor = nil; keyTimes.removeAll(); typingSessionStart = nil; typingStopTimer?.invalidate()
-    }
-
-    private func reactToKey(_ e: NSEvent) {
+    private func reactToKey(_ code: UInt16) {
         guard isVisible, !isSuspended else { return }
         let now = Date()
-        stats.keys += 1
-        keyTimes = keyTimes.filter { now.timeIntervalSince($0) < 3 } + [now]
+        state.totals.keys += 1
+        if state.totals.keys % 200 == 0 { markDirty() }
+        keys.record(now: now)
         if typingSessionStart == nil { typingSessionStart = now; speedCelebrated = false }
         typingStopTimer?.invalidate()
         typingStopTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in self?.typingStopped() }
 
-        switch e.keyCode {
+        switch code {
         case 36, 76:   // Return / Enter
-            if current.name == "typing" || current.name.hasPrefix("idle") { react("jump", for: 0.6, say: "Sent!") }
+            if current.name == "typing" || current.name.hasPrefix("idle") { react("jump", for: 0.6, say: phrases.pick("sent")) }
             return
         case 51, 117:  // Delete / Forward delete
-            deleteTimes = deleteTimes.filter { now.timeIntervalSince($0) < 2 } + [now]
-            if deleteTimes.count >= 6 { deleteTimes.removeAll(); react("sad", for: 1.5, say: "Oops?") }
+            if deletes.record(now: now) { react("sad", for: 1.5, say: phrases.pick("oops")) }
             return
         default: break
         }
-        // Steady typing (>= 8 keys in the last 3 s): tap along.
-        if keyTimes.count >= 8, current.name != "typing", !gestureActive, !["held", "focus", "groove"].contains(current.name) {
-            enter("typing", for: 4); say("tak tak tak")
+        let recent = keys.count(within: Behaviour.Bursts.typing.window, now: now)
+        if recent >= Behaviour.Bursts.typing.count, current.name != "typing", !gestureActive, !Behaviour.typingBlockedStates.contains(current.name) {
+            enter("typing", for: 4); say(phrases.pick("typing"))
         } else if current.name == "typing" {
-            stateEndsAt = now.addingTimeInterval(3)   // keep tapping while keys keep coming
+            stateEndsAt = now.addingTimeInterval(3)
         }
-        // Fast streak: 60 keys in 20 s, once per session.
-        if !speedCelebrated, let start = typingSessionStart, now.timeIntervalSince(start) >= 20 || keyTimes.count >= 12 {
-            if keyTimes.count >= 12 { speedCelebrated = true; react("happy", for: 1.5, say: "Speed typer!", force: true) }
+        if !speedCelebrated, recent >= Behaviour.Bursts.speedTyper.count {
+            speedCelebrated = true; react("happy", for: 1.5, say: phrases.pick("speedTyper"), force: true)
         }
     }
-
     private func typingStopped() {
         defer { typingSessionStart = nil }
-        if current.name == "typing" { stateEndsAt = Date() }   // let the state machine move on
-        if let start = typingSessionStart, Date().timeIntervalSince(start) > 600 {
-            react("yawn", for: 1.5, say: "Break?", force: true)
-        }
+        if current.name == "typing" { stateEndsAt = Date() }
+        if let start = typingSessionStart, Date().timeIntervalSince(start) > 600 { react("yawn", for: 1.5, say: phrases.pick("break"), force: true) }
     }
 
-    /// Play a reaction unless one just played or he is mid-gesture. Returns whether it ran.
-    @discardableResult
-    private func react(_ state: String, for seconds: TimeInterval, say line: String? = nil, force: Bool = false) -> Bool {
-        guard isVisible, !isSuspended else { return false }
-        if !force {
-            if Date().timeIntervalSince(lastReaction) < 1.5 { return false }
-            if gestureActive || current.name == "held" { return false }
-        } else if current.name == "held" { return false }
-        lastReaction = Date()
-        enter(state, for: seconds)
-        if let line { say(line) }
-        return true
+    // MARK: clipboard (change counter only, plus text length)
+
+    private func checkClipboard() {
+        let c = NSPasteboard.general.changeCount
+        guard c != clipboardCount else { return }
+        clipboardCount = c
+        guard prefs.isEnabled(.clipboard), current.name != "sleep", !gestureActive else { return }
+        let len = NSPasteboard.general.string(forType: .string)?.count ?? 0
+        if len > 200 { enter("think", for: 2.0); say(phrases.pick("think")) } else { enter("sniff", for: 1.2); say(phrases.pick("sniff")) }
     }
 
-    private func appName(_ note: Notification) -> String? {
-        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        return app.localizedName ?? "that"
+    private func fetch(_ urls: [URL]) {
+        guard let url = urls.first else { return }
+        enter("fetch", for: 2.0)
+        say(phrases.pick("fetched", ["name": url.lastPathComponent]))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { NSWorkspace.shared.open(url) }
     }
 
-    private func reactToAppSwitch(_ note: Notification) {
-        guard let name = appName(note) else { return }
-        react("alert", for: 1.1, say: Bool.random() ? "\(name)?" : nil)
-    }
-    private func reactToAppLaunch(_ note: Notification) {
-        guard let name = appName(note) else { return }
-        react("happy", for: 1.5, say: "Ooh, \(name)!", force: true)
-    }
-    private func reactToAppQuit(_ note: Notification) {
-        guard let name = appName(note) else { return }
-        react(Bool.random() ? "wave" : "salute", for: 1.3, say: "Bye \(name)", force: true)
-    }
-    private func reactToSpaceChange() { react("jump", for: 0.6, say: "Whee!") }
-    private func reactToMount(_ note: Notification) {
-        let name = (note.userInfo?["NSWorkspaceVolumeLocalizedNameKey"] as? String) ?? "drive"
-        react("sniff", for: 1.4, say: "New drive: \(name)", force: true)
-    }
-    private func reactToUnmount(_ note: Notification) {
-        let name = (note.userInfo?["NSWorkspaceVolumeLocalizedNameKey"] as? String) ?? "drive"
-        react("wave", for: 1.2, say: "Bye \(name)", force: true)
-    }
-    private func reactToGlobalClick(_ event: NSEvent) {
-        // Glance toward the click; a burst of clicks gets a bark.
-        lookTarget = NSEvent.mouseLocation; lookUntil = Date().addingTimeInterval(1.5)
-        let now = Date()
-        clickTimes = clickTimes.filter { now.timeIntervalSince($0) < 2 } + [now]
-        if clickTimes.count >= 6 { clickTimes.removeAll(); react("bark", for: 1.0, say: "Busy busy!") }
-    }
-    fileprivate func reactToPowerChange() {
-        let charging = isCharging
-        defer { lastCharging = charging }
-        guard let was = lastCharging, was != charging else { return }
-        if charging { react("happy", for: 1.5, say: "Charging!", force: true) }
-        else { react("alert", for: 1.1, say: "Unplugged", force: true) }
-    }
-    private var isCharging: Bool {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return false }
-        for src in list {
-            if let d = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any],
-               let state = d[kIOPSPowerSourceStateKey] as? String { return state == kIOPSACPowerValue }
-        }
-        return false
-    }
-    private func reactToAppearanceChange() {
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        if dark { react("yawn", for: 1.5, say: "Night night", force: true) }
-        else { react("alert", for: 1.1, say: "Bright!", force: true) }
-    }
+    // MARK: follow cursor
 
-    /// Event-driven watch on ~/Downloads: a new file gets fetched.
-    private func watchDownloads() {
-        guard let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
-        downloadsSeen = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
-        let fd = open(dir.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
-        src.setEventHandler { [weak self] in
-            guard let self else { return }
-            let now = Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
-            let added = now.subtracting(self.downloadsSeen).filter { !$0.hasPrefix(".") && !$0.hasSuffix(".download") && !$0.hasSuffix(".crdownload") && !$0.hasSuffix(".part") }
-            self.downloadsSeen = now
-            if let name = added.sorted().first { self.react("fetch", for: 2.0, say: "New download: \(name)", force: true) }
-        }
-        src.setCancelHandler { close(fd) }
-        src.resume()
-        downloadsSource = src
-    }
-
-    /// Follow-cursor mode: Chimtu trots toward the mouse and idles beside it.
     private(set) var followsCursor = false
     func setFollowCursor(_ on: Bool) {
         followsCursor = on
         if on { enter("idle", for: 0) } else { stopMover(); chooseNextState() }
     }
-
-    /// Public commands (menu + gestures).
-    func jump() { enter("jump", for: 0.6) }
-    func sitDown() { enter("sit", for: .random(in: 10...20)) }
-    func goToSleep() { enter("sleep", for: .random(in: 30...90)) }
-
     private var moveTimer: Timer?
     private var velocity = CGPoint.zero
 
-    /// Called from the sprite tick: decides the pose; movement itself runs on
-    /// the smooth mover below so it isn't quantised to the sprite frame rate.
     private func followTick() {
         let mouse = NSEvent.mouseLocation
         let f = window.frame
         let dx = mouse.x - f.midX, dy = mouse.y - f.midY
-        let dist = hypot(dx, dy)
-        let arrived = abs(dx) < 50 && abs(dy) < 60
-        if arrived {
+        if abs(dx) < 50 && abs(dy) < 60 {
             stopMover()
             if !current.name.hasPrefix("idle") { enter("idle", for: 0) }
             return
         }
         startMover()
         let dir: CGFloat = dx > 0 ? 1 : -1
-        let gait = dist > 260 ? "run" : "walk"
-        let want = "\(gait)_\(dir > 0 ? "right" : "left")"
+        let want = "\(hypot(dx, dy) > 260 ? "run" : "walk")_\(dir > 0 ? "right" : "left")"
         if current.name != want { walkDirection = dir; enter(want, for: 0) }
     }
-
-    /// 60 Hz mover, alive only while chasing. Uses a critically-damped spring
-    /// toward the cursor so motion accelerates, glides, and settles smoothly.
     private func startMover() {
         guard moveTimer == nil else { return }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.moveStep() }
@@ -448,76 +419,67 @@ final class PetController {
         moveTimer = t
     }
     private func stopMover() { moveTimer?.invalidate(); moveTimer = nil; velocity = .zero }
-
     private func moveStep() {
         let mouse = NSEvent.mouseLocation
         var f = window.frame
         let dx = mouse.x - f.midX, dy = mouse.y - f.midY
         let dt: CGFloat = 1.0 / 60.0
-        let stiffness: CGFloat = 30, damping: CGFloat = 2 * sqrt(stiffness)   // critically damped
-        velocity.x += (stiffness * dx - damping * velocity.x) * dt
-        velocity.y += (stiffness * dy - damping * velocity.y) * dt
-        let maxSpeed: CGFloat = 900
+        let k: CGFloat = 30, c: CGFloat = 2 * sqrt(30)
+        velocity.x += (k * dx - c * velocity.x) * dt
+        velocity.y += (k * dy - c * velocity.y) * dt
         let sp = hypot(velocity.x, velocity.y)
-        if sp > maxSpeed { velocity.x *= maxSpeed / sp; velocity.y *= maxSpeed / sp }
-        f.origin.x += velocity.x * dt
-        f.origin.y += velocity.y * dt
-        if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
-            f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
-            f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
-        }
-        programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
+        if sp > 900 { velocity.x *= 900 / sp; velocity.y *= 900 / sp }
+        f.origin.x += velocity.x * dt; f.origin.y += velocity.y * dt
+        clampToScreen(&f)
+        move(to: f.origin)
     }
 
-    private func enter(_ name: String, for seconds: TimeInterval) {
+    // MARK: state machine
+
+    private func enter(_ name: String, for seconds: TimeInterval, userInitiated: Bool = false) {
         guard let anim = animations[name] else { return }
-        wasAsleep = current.name == "sleep"
+        let wasAsleep = current.name == "sleep"
+        if wasAsleep != (name == "sleep") { state.mood.integrate(to: Date(), asleep: wasAsleep) }
         stateStartedAt = Date()
         current = anim
         frame = 0
         stateEndsAt = seconds > 0 ? Date().addingTimeInterval(seconds) : .distantFuture
         restartTimer()
         tick()
+        sounds?.play(for: name, userInitiated: userInitiated, quiet: isNight || focusActive || isSuspended || !isVisible)
     }
 
+    private var isNight: Bool { Behaviour.isNight(hour: Calendar.current.component(.hour, from: Date()), start: prefs.quietStart, end: prefs.quietEnd) }
+
     private func chooseNextState() {
-        // Waking up always starts with a yawn and stretch.
-        if focusActive { enter("focus", for: 0); return }
-        if musicPlaying { enter("groove", for: 0); return }
-        if current.name == "sleep" { enter(Bool.random() ? "yawn" : "stretch", for: 1.5); return }
-        if current.name == "sit", Date().timeIntervalSince(stateStartedAt) > 12, Double.random(in: 0..<1) < 0.5 { enter("stretch", for: 1.5); return }
-        if current.name == "eat", Double.random(in: 0..<1) < 0.3 { enter("hiccup", for: 2.0); say("hic!"); return }
-        if current.name == "sad" { enter("sleep", for: .random(in: 60...180)); return }
-        // Nobody around for 5 minutes: get lonely, then nap.
-        if userIdleSeconds > 300, current.name != "sleep" { enter("sad", for: 3); return }
-        // Mostly rests. Walking is the only state that moves the window.
-        let roll = Double.random(in: 0..<1)
-        switch roll {
-        case ..<0.40: enter(batteryIsLow ? "tired" : "idle", for: .random(in: 5...12))
-        case ..<0.62: enter("sit", for: .random(in: 6...15))
-        case ..<0.74: enter("sleep", for: isNight ? .random(in: 90...240) : .random(in: 15...40))
-        case ..<0.80: enter("scratch", for: 1.5)
-        case ..<0.83: enter("jump", for: 0.6)
-        case ..<0.85: enter("dance", for: 2.5)
-        case ..<0.87: enter(Bool.random() ? "spin" : "shake", for: 0.9)
-        case ..<0.89: enter(["sneeze", "dig", "roll"].randomElement()!, for: 1.2)
-        case ..<0.91: if isNight { enter("sleep", for: 120) } else { Bool.random() ? bark() : beg() }
-        case ..<0.93: enter("idle", for: 4); say(Self.idleLines.randomElement()!)
-        case ..<0.94: enter("wink", for: 1.0)
-        case ..<0.955: enter("chase", for: 1.8); say("Gotcha... almost")
-        case ..<0.965: if !isNight { zoomies() } else { enter("sleep", for: 120) }
-        default:
-            walkDirection = Bool.random() ? 1 : -1
-            if let screen = window.screen ?? NSScreen.main {
-                let x = window.frame.minX
-                if x < screen.visibleFrame.minX + 40 { walkDirection = 1 }
-                if x > screen.visibleFrame.maxX - Sprites.size.width - 40 { walkDirection = -1 }
-            }
-            enter(walkDirection > 0 ? "walk_right" : "walk_left", for: .random(in: 2...5))
+        state.mood.integrate(to: Date(), asleep: current.name == "sleep")
+        let vf = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let x = window.frame.minX
+        let ctx = BrainContext(
+            current: current.name,
+            stateAge: Date().timeIntervalSince(stateStartedAt),
+            focusActive: focusActive,
+            musicPlaying: musicPlaying,
+            userIdleSeconds: Date().timeIntervalSince(lastMouseMove),
+            isNight: isNight,
+            batteryLow: SystemObservers.batteryIsLow,
+            nearLeftEdge: x < vf.minX + 40,
+            nearRightEdge: x > vf.maxX - window.frame.width - 40,
+            mood: state.mood)
+        switch Brain.chooseNext(ctx, rng: &rng) {
+        case .enter(let name, let secs, let key):
+            if name == "sad", ctx.userIdleSeconds > Behaviour.lonelyAfter { mood(.lonely) }
+            enter(name, for: secs)
+            if let key, chattyEnough(for: key) { say(phrases.pick(key)) }
+        case .walk(let dir, let secs):
+            walkDirection = CGFloat(dir)
+            enter(dir > 0 ? "walk_right" : "walk_left", for: secs)
+        case .zoomies: zoomies()
         }
     }
 
-    // MARK: timer
+    /// Chattiness: quiet → no idle chatter (reactions still speak); normal/chatty → as designed.
+    private func chattyEnough(for key: String) -> Bool { prefs.chattiness == 0 ? key != "idle" : true }
 
     private func restartTimer() {
         timer?.invalidate()
@@ -526,112 +488,71 @@ final class PetController {
         if ProcessInfo.processInfo.isLowPowerModeEnabled { fps = max(1, fps / 2) }
         let interval = 1.0 / fps
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.tick() }
-        t.tolerance = interval * 0.5   // lets the system batch wakeups
+        t.tolerance = interval * 0.5
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
 
-    /// While idling, pick the idle variant whose eyes point toward the cursor.
-    /// Uses the cached mouse location on the existing tick: no extra wakeups.
     private func idleVariantForCursor() -> Animation? {
         var point = NSEvent.mouseLocation
         if let t = lookTarget, Date() < lookUntil { point = t }
         let dx = point.x - window.frame.midX
-        let name = dx < -60 ? "idle_left" : (dx > 60 ? "idle_right" : "idle")
-        return animations[name]
+        return animations[dx < -60 ? "idle_left" : (dx > 60 ? "idle_right" : "idle")]
     }
 
     private func tick() {
-        noteMouseActivity()
+        let m = NSEvent.mouseLocation
+        if m != lastMouse { lastMouse = m; lastMouseMove = Date() }
         checkClipboard()
-        if current.name.hasPrefix("idle"), let variant = idleVariantForCursor(), variant.name != current.name {
-            current = variant   // same frame count and rate, so keep the frame index
-        }
-        let hatOK = !["roll", "spin", "held", "sneeze", "shake"].contains(current.name)
-        view.show(current.frames[frame], hatVisible: hatOK)
+        if current.name.hasPrefix("idle"), let v = idleVariantForCursor(), v.name != current.name { current = v }
+        view.show(current.frames[frame % current.frames.count], hatVisible: !Behaviour.hatHiddenStates.contains(current.name))
         frame = (frame + 1) % current.frames.count
+
         if followsCursor {
-            let gesture = ["wave", "jump", "scratch", "yawn", "alert", "happy", "held", "land", "dance", "spin", "shake", "eat", "love", "howl", "sneeze", "dig", "roll", "sniff", "fetch", "bark", "beg", "typing", "wink", "celebrate", "stretch", "peek", "think", "laugh", "pout", "salute", "hiccup", "chase"].contains(current.name)
-            if gesture && Date() < stateEndsAt { return }
-            followTick()
+            if !gestureActive { followTick() }
             return
         }
         if Date() < zoomiesUntil, current.name.hasPrefix("run") {
             var f = window.frame
             f.origin.x += walkDirection * 14
             if let vf = (window.screen ?? NSScreen.main)?.visibleFrame {
-                if f.origin.x < vf.minX { f.origin.x = vf.minX; walkDirection = 1; current = animations["run_right"]! }
-                if f.origin.x > vf.maxX - f.width { f.origin.x = vf.maxX - f.width; walkDirection = -1; current = animations["run_left"]! }
+                if f.origin.x < vf.minX { f.origin.x = vf.minX; walkDirection = 1; if let a = animations["run_right"] { current = a } }
+                if f.origin.x > vf.maxX - f.width { f.origin.x = vf.maxX - f.width; walkDirection = -1; if let a = animations["run_left"] { current = a } }
             }
-            programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
+            move(to: f.origin)
         } else if current.name.hasPrefix("walk") {
             var f = window.frame
             f.origin.x += walkDirection * 2.5
-            programmaticMove = true; window.setFrameOrigin(f.origin); programmaticMove = false
+            move(to: f.origin)
         }
         if Date() >= stateEndsAt { chooseNextState() }
+    }
+
+    // MARK: window helpers
+
+    private func move(to origin: NSPoint) { programmaticMove = true; window.setFrameOrigin(origin); programmaticMove = false }
+    private func clampToScreen(_ f: inout NSRect) {
+        guard let vf = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        f.origin.x = min(max(f.origin.x, vf.minX), vf.maxX - f.width)
+        f.origin.y = min(max(f.origin.y, vf.minY), vf.maxY - f.height)
+    }
+    private func placeAtBottom(primary: Bool) {
+        guard let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let x = primary ? vf.midX - Sprites.size.width / 2 : CGFloat.random(in: vf.minX + 40 ... max(vf.minX + 41, vf.maxX - Sprites.size.width - 40))
+        window.setFrameOrigin(NSPoint(x: x, y: vf.minY))
     }
 
     // MARK: visibility & power
 
     func setVisible(_ visible: Bool) {
         isVisible = visible
-        if visible { window.orderFrontRegardless() } else { window.orderOut(nil) }
+        if visible { window.orderFrontRegardless() } else { window.orderOut(nil); saveState() }
         restartTimer()
     }
-
     private func suspend(_ suspended: Bool) {
         isSuspended = suspended
+        if suspended { saveState() }
         restartTimer()
     }
-
-    private func observeSystem() {
-        let ws = NSWorkspace.shared.notificationCenter
-        ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
-        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
-        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
-        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.suspend(false) }
-        ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppSwitch(n) }
-        ws.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppLaunch(n) }
-        ws.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.reactToAppQuit(n) }
-        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.reactToSpaceChange() }
-        ws.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: .main) { [weak self] n in self?.reactToMount(n) }
-        ws.addObserver(forName: NSWorkspace.didUnmountNotification, object: nil, queue: .main) { [weak self] n in self?.reactToUnmount(n) }
-        // Global mouse clicks need no special permission (keyboard would, so we don't watch typing).
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in self?.reactToGlobalClick(e) }
-        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in self?.reactToAppearanceChange() }
-        lastCharging = isCharging
-        watchDownloads()
-        startKeyMonitor()
-        let dc = DistributedNotificationCenter.default()
-        dc.addObserver(forName: Notification.Name("com.apple.Music.playerInfo"), object: nil, queue: .main) { [weak self] n in self?.reactToMusic(n) }
-        dc.addObserver(forName: Notification.Name("com.spotify.client.PlaybackStateChanged"), object: nil, queue: .main) { [weak self] n in self?.reactToMusic(n) }
-        dc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.suspend(true) }
-        dc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
-            self?.suspend(false); self?.enter("happy", for: 1.5); self?.say("Welcome back!")
-        }
-        NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in self?.restartTimer() }
-        // Charger plug/unplug: IOKit power-source notifications, event-driven.
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
-        if let src = IOPSNotificationCreateRunLoopSource({ ctx in
-            guard let ctx else { return }
-            Unmanaged<PetController>.fromOpaque(ctx).takeUnretainedValue().reactToPowerChange()
-        }, ctx)?.takeRetainedValue() {
-            CFRunLoopAddSource(CFRunLoopGetMain(), src, .defaultMode)
-        }
-    }
-
-    static var count = 0
-    private func placeAtBottom() {
-        guard let screen = NSScreen.main else { return }
-        let vf = screen.visibleFrame
-        let x = PetController.count == 0 ? vf.midX - Sprites.size.width / 2 : CGFloat.random(in: vf.minX + 40 ... vf.maxX - Sprites.size.width - 40)
-        PetController.count += 1
-        window.setFrameOrigin(NSPoint(x: x, y: vf.minY))
-    }
-}
-
-
-private extension Double {
-    func nonZeroOr(_ fallback: Double) -> CGFloat { self == 0 ? CGFloat(fallback) : CGFloat(self) }
 }
